@@ -142,7 +142,12 @@ export const useStore = create((set, get) => ({
     cardHeld: s.cardHeld || axis !== 'v',
   })),
   setCardHeld: (cardHeld) => set({ cardHeld }),
-  resetCard: () => set({ angles: { v: 0, l: 0, d: 0 }, cardHeld: false }),
+  /** Back to how the card started: flat, not turned, sheet face-up (open stays open, closed shows the front cover). */
+  resetCard: () => set((s) => {
+    const [a1, a2] = s.halves;
+    const open = Math.abs(a1) > 0.5 === Math.abs(a2) > 0.5;
+    return { angles: { v: 0, l: 0, d: 0 }, cardHeld: false, halves: open ? [0, 0] : [1, 0] };
+  }),
   resetDesk: () => set({ spots: {} }),
   setTapePattern: (tapePattern) => set({ tapePattern }),
   setTapeWidth: (tapeWidth) => set({ tapeWidth }),

@@ -231,6 +231,67 @@ function Rig() {
   return null;
 }
 
+/**
+ * The scene is only drawn while something is happening (the user is working on it, something is
+ * still moving into place, glitter is twinkling) and never while the app is in the background,
+ * so the computer stays responsive for other apps.
+ */
+const ACTIVE_MS = 1500;
+function RenderOnDemand() {
+  const invalidate = useThree((s) => s.invalidate);
+  const activeUntil = useRef(0);
+  useEffect(() => {
+    // in front = the app has focus; in the background nothing animates by itself any more
+    let focused = !document.hidden;
+    const wake = () => { if (document.hidden) return; activeUntil.current = performance.now() + ACTIVE_MS; invalidate(); };
+    const sleep = () => {
+      focused = false;
+      activeUntil.current = 0;
+      releasePointer();
+    };
+    const resume = () => { if (document.hidden) return; focused = true; wake(); };
+    const visibility = () => (document.hidden ? sleep() : resume());
+    const events = ['pointermove', 'pointerdown', 'pointerup', 'wheel', 'keydown', 'resize'];
+    events.forEach((e) => window.addEventListener(e, wake, { passive: true }));
+    window.addEventListener('blur', sleep);
+    window.addEventListener('focus', resume);
+    document.addEventListener('visibilitychange', visibility);
+    const unsubStore = useStore.subscribe(wake);
+    let unsubPaper = useStore.getState().paper.onChange(wake);
+    const unsubPaperSwap = useStore.subscribe((st, prev) => {
+      if (st.paper !== prev.paper) { unsubPaper(); unsubPaper = st.paper.onChange(wake); }
+    });
+    // glitter twinkles about 10 times a second, only while the app is in front
+    const twinkle = setInterval(() => {
+      if (!focused) return;
+      const p = useStore.getState().paper;
+      if (p.faces.inside.glitter.length || p.faces.outside.glitter.length || p.fall || p.choice) invalidate();
+    }, 100);
+    wake();
+    return () => {
+      events.forEach((e) => window.removeEventListener(e, wake));
+      window.removeEventListener('blur', sleep);
+      window.removeEventListener('focus', resume);
+      document.removeEventListener('visibilitychange', visibility);
+      unsubStore(); unsubPaper(); unsubPaperSwap();
+      clearInterval(twinkle);
+    };
+  }, [invalidate]);
+  // keep drawing frames while things are still moving into place after the last action
+  useFrame(() => { if (performance.now() < activeUntil.current) invalidate(); });
+  return null;
+}
+
+/** Leaving the app with the button held must not leave a stroke, drag or cut half-finished. */
+function releasePointer() {
+  if (!pointer.down && !pointer.drawing) return;
+  pointer.deskPress = null;
+  window.dispatchEvent(new PointerEvent('pointerup', { bubbles: true }));
+  pointer.down = false;
+  pointer.drawing = false;
+  pointer.pulling = false;
+}
+
 /** Soft studio reflections for glossy plastic, metal and glass. */
 function Studio() {
   const { gl, scene } = useThree();
@@ -287,11 +348,13 @@ export function Desk() {
       <div className="desk-light" />
       <Canvas
         shadows="soft"
+        frameloop="demand"
         dpr={[1, 1.5]}
         camera={{ fov: 38, position: [0, -5, 11], near: 0.1, far: 80 }}
         gl={{ alpha: true, antialias: true, toneMapping: THREE.NeutralToneMapping, preserveDrawingBuffer: true }}
         onPointerMissed={() => { pointer.onCard = false; }}
       >
+        <RenderOnDemand />
         <Rig />
         <Studio />
         <ambientLight intensity={0.9} />
