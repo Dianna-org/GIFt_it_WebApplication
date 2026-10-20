@@ -5,7 +5,7 @@ import { RoomEnvironment } from 'three/examples/jsm/environments/RoomEnvironment
 import { useStore } from '../store.js';
 import { cardDims, CANVAS_PX_W, TAPE_PATTERNS } from '../config.js';
 import { placeTextBox } from '../engine/paper.js';
-import { Card, canvasToWorld, putCardDown } from './Card.jsx';
+import { Card, canvasToWorld, cardMeshes, putCardDown } from './Card.jsx';
 import { movePointer, pointer } from './pointer.js';
 import {
   Brush, Crayon, Eraser, GlitterPen, Highlighter, HeldSticker, Marker, Pipette, Scissors, StickerSheet, TapeRoll, TextPad,
@@ -20,18 +20,18 @@ const qFromDir = (dir) => new THREE.Quaternion().setFromUnitVectors(Z, dir.clone
 
 // Everything the user can pick up lives on the left side of the desk, with room between the tools.
 const DEFS = [
-  { id: 'crayon', tool: 'crayon', kind: 'pen', home: [-11.2, 4.3], yaw: 0.04, r: 0.1, label: 'Crayon' },
-  { id: 'marker', tool: 'marker', kind: 'pen', home: [-11.2, 3.35], yaw: -0.03, r: 0.16, label: 'Marker' },
-  { id: 'highlighter', tool: 'highlighter', kind: 'pen', home: [-11.2, 2.35], yaw: 0.03, r: 0.24, label: 'Highlighter' },
-  { id: 'brush', tool: 'brush', kind: 'pen', home: [-11.25, 1.35], yaw: -0.02, r: 0.12, label: 'Paint brush' },
-  { id: 'glitter', tool: 'glitter', kind: 'pen', home: [-11.25, 0.35], yaw: 0.03, r: 0.14, label: 'Glitter gel pen' },
-  { id: 'picker', tool: 'picker', kind: 'pen', home: [-11.2, -0.65], yaw: -0.04, r: 0.14, label: 'Colour picker – take a colour from the card' },
+  { id: 'crayon', tool: 'crayon', kind: 'pen', len: 1.95, home: [-11.2, 4.3], yaw: 0.04, r: 0.1, label: 'Crayon' },
+  { id: 'marker', tool: 'marker', kind: 'pen', len: 1.98, home: [-11.2, 3.35], yaw: -0.03, r: 0.16, label: 'Marker' },
+  { id: 'highlighter', tool: 'highlighter', kind: 'pen', len: 2.0, home: [-11.2, 2.35], yaw: 0.03, r: 0.24, label: 'Highlighter' },
+  { id: 'brush', tool: 'brush', kind: 'pen', len: 2.9, home: [-11.25, 1.35], yaw: -0.02, r: 0.12, label: 'Paint brush' },
+  { id: 'glitter', tool: 'glitter', kind: 'pen', len: 2.54, home: [-11.25, 0.35], yaw: 0.03, r: 0.14, label: 'Glitter gel pen' },
+  { id: 'picker', tool: 'picker', kind: 'pen', len: 2.0, home: [-11.2, -0.65], yaw: -0.04, r: 0.14, label: 'Colour picker – take a colour from the card' },
   ...TAPE_PATTERNS.map((p, i) => ({
     id: 'tape-' + p.id, tool: 'tape', variant: p.id, kind: 'roll', label: `Washi tape – ${p.label}`,
     home: [-7.0 + (i % 2) * 1.5, 4.0 - Math.floor(i / 2) * 1.45],
   })),
-  { id: 'scissors', tool: 'scissors', kind: 'scissors', home: [-11.3, -1.95], yaw: 0.05, r: 0.1, scale: 0.85, label: 'Scissors – cut tape, or cut the card' },
-  { id: 'eraser', tool: 'eraser', kind: 'eraser', home: [-6.6, -0.6], yaw: 0.1, r: 0.15, label: 'Eraser – removes drawing only' },
+  { id: 'scissors', tool: 'scissors', kind: 'scissors', len: 2.2, width: 0.9, home: [-11.3, -1.95], yaw: 0.05, r: 0.1, scale: 0.85, label: 'Scissors – cut tape, or cut the card' },
+  { id: 'eraser', tool: 'eraser', kind: 'eraser', len: 1.0, width: 0.6, home: [-6.6, -0.6], yaw: 0.1, r: 0.15, label: 'Eraser – removes drawing only' },
   { id: 'sticker', tool: 'sticker', kind: 'sheet', home: [-10.0, -3.65], yaw: 1.5708, label: 'Stickers' },
   { id: 'text', tool: 'text', kind: 'pad', home: [-7.2, -3.0], yaw: -0.12, label: 'Text box' },
 ];
@@ -53,6 +53,121 @@ function restPose(def, spot) {
   return { pos, quat };
 }
 
+// ------------------------------------------------------------------ keeping tools out from under the card
+/** Points covering where a tool lies on the desk (x, y), from its resting place. */
+function toolFootprint(def, spot) {
+  const x = spot ? spot.x : def.home[0], y = spot ? spot.y : def.home[1];
+  const yaw = (def.yaw || 0) + (spot ? spot.yaw : 0);
+  const c = Math.cos(yaw), sn = Math.sin(yaw);
+  const pts = [];
+  if (def.len) { // long tools: from the tip along their length
+    const half = (def.width || 0.3) / 2;
+    for (let t = 0; t <= def.len + 1e-6; t += 0.25) {
+      for (const o of [-half, 0, half]) pts.push({ x: x + c * t - sn * o, y: y + sn * t + c * o });
+    }
+  } else { // flat things: a rectangle (or the roll's circle) around the centre
+    const [hw, hh] = def.kind === 'roll' ? [0.55, 0.55] : def.kind === 'sheet' ? [0.71, 0.99] : [0.55, 0.78];
+    for (let i = -2; i <= 2; i++) for (let j = -2; j <= 2; j++) {
+      const lx = (i / 2) * hw, ly = (j / 2) * hh;
+      pts.push({ x: x + c * lx - sn * ly, y: y + sn * lx + c * ly });
+    }
+  }
+  return { pts, centre: def.len ? { x: x + c * def.len / 2, y: y + sn * def.len / 2 } : { x, y } };
+}
+
+/** Part of the desk you can see and click (not under the bottom panel or off screen). */
+const onVisibleDesk = (p) => p.x > -11.9 && p.x < 6.2 && p.y < 4.7 && p.y > -2.4;
+
+function insideOrNear(p, poly, margin) {
+  let inside = false;
+  for (let i = 0, j = poly.length - 1; i < poly.length; j = i++) {
+    const a = poly[i], b = poly[j];
+    if (a.y > p.y !== b.y > p.y && p.x < ((b.x - a.x) * (p.y - a.y)) / (b.y - a.y) + a.x) inside = !inside;
+  }
+  if (inside) return true;
+  for (let i = 0, j = poly.length - 1; i < poly.length; j = i++) {
+    const a = poly[i], b = poly[j], dx = b.x - a.x, dy = b.y - a.y;
+    const t = Math.max(0, Math.min(1, ((p.x - a.x) * dx + (p.y - a.y) * dy) / (dx * dx + dy * dy || 1)));
+    if (Math.hypot(p.x - (a.x + dx * t), p.y - (a.y + dy * t)) < margin) return true;
+  }
+  return false;
+}
+
+/** The card's outline on the desk: one quadrilateral per half of the sheet. */
+function cardOutline() {
+  const out = [];
+  for (const key of ['inside-left', 'inside-right']) {
+    const m = cardMeshes[key];
+    if (!m) continue;
+    m.updateWorldMatrix(true, false);
+    const { width: w, height: h } = m.geometry.parameters;
+    out.push([[-w / 2, -h / 2], [w / 2, -h / 2], [w / 2, h / 2], [-w / 2, h / 2]].map(([lx, ly]) => {
+      const v = m.localToWorld(new THREE.Vector3(lx, ly, 0));
+      return { x: v.x, y: v.y };
+    }));
+  }
+  return out;
+}
+
+/**
+ * Tools may be left anywhere on the desk, but if the card ends up on top of one (it was opened,
+ * turned or resized over it), the tool rolls out from under the card so it can still be picked up.
+ */
+function KeepToolsVisible() {
+  const invalidate = useThree((st) => st.invalidate);
+  const last = useRef(0);
+  const prevOutline = useRef(null);
+  useFrame(() => {
+    const now = performance.now();
+    if (now - last.current < 250) return;
+    last.current = now;
+    const s = useStore.getState();
+    if (s.cardHeld) return; // a card in the hand is above the desk, not lying on the tools
+    const outline = cardOutline();
+    if (!outline.length) return;
+    // wait until the card has stopped moving (opening, turning), then move each tool once
+    const flatPts = outline.flat(), before = prevOutline.current;
+    prevOutline.current = flatPts;
+    if (!before || before.length !== flatPts.length || flatPts.some((p, i) => Math.hypot(p.x - before[i].x, p.y - before[i].y) > 0.01)) {
+      invalidate(); // keep looking until it settles
+      return;
+    }
+    const covered = (pts) => pts.some((p) => outline.some((poly) => insideOrNear(p, poly, 0.3)));
+    const all = outline.flat();
+    const cardCentre = { x: all.reduce((a, p) => a + p.x, 0) / all.length, y: all.reduce((a, p) => a + p.y, 0) / all.length };
+    const inHand = heldToolId(s), pendingRoll = s.paper.pendingTape ? 'tape-' + s.paper.pendingTape.pattern.id : null;
+    let spots = null;
+    const lying = DEFS.filter((d) => d.id !== inHand && d.id !== pendingRoll);
+    for (const def of lying) {
+      const spot = (spots || s.spots)[def.id];
+      const fp = toolFootprint(def, spot);
+      if (!covered(fp.pts)) continue;
+      // ...and it should not land on another tool either
+      const others = lying.filter((d) => d !== def).map((d) => toolFootprint(d, (spots || s.spots)[d.id]).pts).flat();
+      const bumps = (pts) => pts.some((p) => others.some((q) => Math.abs(p.x - q.x) < 0.4 && Math.abs(p.y - q.y) < 0.4));
+      // find the nearest free, visible place, preferring the direction away from the card's middle
+      let ax = fp.centre.x - cardCentre.x, ay = fp.centre.y - cardCentre.y;
+      const l = Math.hypot(ax, ay);
+      const away = l < 1e-3 ? Math.PI : Math.atan2(ay, ax);
+      const dirs = Array.from({ length: 24 }, (_, k) => away + (k % 2 ? 1 : -1) * Math.ceil(k / 2) * (Math.PI / 12));
+      const base = spot || { x: def.home[0], y: def.home[1], yaw: 0 };
+      search: for (let step = 0.25; step < 12; step += 0.25) {
+        for (const a of dirs) {
+          const moved = { ...base, x: base.x + Math.cos(a) * step, y: base.y + Math.sin(a) * step };
+          const pts = toolFootprint(def, moved).pts;
+          if (!pts.every(onVisibleDesk) || covered(pts) || bumps(pts)) continue;
+          moved.pushed = performance.now(); // tells the tool to roll / slide there instead of jumping
+          spots = spots || { ...s.spots };
+          spots[def.id] = moved;
+          break search;
+        }
+      }
+    }
+    if (spots) useStore.setState({ spots });
+  });
+  return null;
+}
+
 function ToolItem({ def }) {
   const ref = useRef();
   const spin = useRef(0);
@@ -72,6 +187,35 @@ function ToolItem({ def }) {
   const held = (tool === def.tool && (!def.variant || tapePattern === def.variant)) || pending;
 
   const rest = useMemo(() => restPose(def, spot), [def, spot]);
+  // The pose is only given to React once: after that the frame loop moves the tool, so a new resting
+  // place is reached by animating there instead of React snapping the object to it.
+  const startPose = useRef({ pos: rest.pos.toArray(), quat: rest.quat.clone() }).current;
+  if (import.meta.env.DEV) { window.__tools = window.__tools || {}; window.__tools[def.id] = ref; }
+
+  // Pushed out from under the card: round tools roll there, flat ones slide, easing to a stop.
+  const anim = useRef(null);
+  const rollAngle = useRef(0); // how far a pen has turned about its own length
+  const lastPush = useRef(0);
+  useEffect(() => {
+    const g = ref.current;
+    if (!g || !spot?.pushed || spot.pushed === lastPush.current) return;
+    lastPush.current = spot.pushed;
+    const from = g.position.clone(), to = rest.pos.clone();
+    const d = to.clone().sub(from);
+    const dist = Math.hypot(d.x, d.y);
+    const yaw = (def.yaw || 0) + spot.yaw;
+    const rolls = def.kind === 'pen'; // pens, crayons, the brush and the pipette are round
+    // rolling without slipping: only the movement across the pen turns it (along it, it slides)
+    const across = d.x * -Math.sin(yaw) + d.y * Math.cos(yaw);
+    anim.current = {
+      from, to, t0: performance.now(),
+      dur: Math.min(1600, 650 + dist * 220),
+      roll0: rollAngle.current,
+      roll: rolls ? -across / Math.max(0.08, def.r || 0.15) : 0,
+      spin: def.kind === 'roll' ? (Math.random() < 0.5 ? -1 : 1) * dist * 0.35 : 0, // a flat roll twirls a little as it slides
+      quatFrom: g.quaternion.clone(),
+    };
+  }, [spot, rest, def]);
   const tmpPos = useRef(new THREE.Vector3()).current;
   const tmpQuat = useRef(new THREE.Quaternion()).current;
   const dir = useRef(new THREE.Vector3()).current;
@@ -86,8 +230,26 @@ function ToolItem({ def }) {
     const inHand = held && def.kind !== 'sheet';
     if (inHand && !wasHeld.current) k = 1; // picked up: in the hand at once
     wasHeld.current = inHand;
+    if (inHand) { anim.current = null; rollAngle.current = 0; }
+    if (!inHand && anim.current) {
+      const a = anim.current;
+      const t = Math.min(1, (now - a.t0) / a.dur);
+      const e = 1 - Math.pow(1 - t, 3); // ease out: quick start, gentle stop
+      g.position.lerpVectors(a.from, a.to, e);
+      g.position.z = a.to.z + Math.sin(Math.PI * t) * (def.kind === 'pen' ? 0 : 0.03);
+      if (a.roll) {
+        rollAngle.current = a.roll0 + a.roll * e;
+        g.quaternion.copy(rest.quat).multiply(new THREE.Quaternion().setFromAxisAngle(Z, rollAngle.current));
+      } else {
+        g.quaternion.slerpQuaternions(a.quatFrom, rest.quat, e);
+        if (a.spin) g.quaternion.premultiply(new THREE.Quaternion().setFromAxisAngle(Z, a.spin * (1 - e) * e * 4));
+      }
+      if (t >= 1) anim.current = null;
+      return;
+    }
     if (!inHand) {
       tmpPos.copy(rest.pos); tmpQuat.copy(rest.quat);
+      if (def.kind === 'pen' && rollAngle.current) tmpQuat.multiply(new THREE.Quaternion().setFromAxisAngle(Z, rollAngle.current));
       if (hover) tmpPos.z += 0.08;
     } else if (def.kind === 'pen' || def.kind === 'scissors' || def.kind === 'eraser') {
       const lift = pointer.drawing ? 0.02 : pointer.onCard ? 0.4 : 0.7;
@@ -180,7 +342,7 @@ function ToolItem({ def }) {
     default: model = <TapeRoll pattern={def.variant} spinRef={spin} />;
   }
   return (
-    <group ref={ref} position={rest.pos.toArray()} quaternion={rest.quat} scale={def.scale || 1} {...(held && def.kind !== 'sheet' ? {} : events)}>
+    <group ref={ref} position={startPose.pos} quaternion={startPose.quat} scale={def.scale || 1} {...(held && def.kind !== 'sheet' ? {} : events)}>
       {model}
     </group>
   );
@@ -236,7 +398,7 @@ function Rig() {
  * still moving into place, glitter is twinkling) and never while the app is in the background,
  * so the computer stays responsive for other apps.
  */
-const ACTIVE_MS = 1500;
+const ACTIVE_MS = 2000;
 function RenderOnDemand() {
   const invalidate = useThree((s) => s.invalidate);
   const activeUntil = useRef(0);
@@ -355,6 +517,7 @@ export function Desk() {
         onPointerMissed={() => { pointer.onCard = false; }}
       >
         <RenderOnDemand />
+        <KeepToolsVisible />
         <Rig />
         <Studio />
         <ambientLight intensity={0.9} />

@@ -195,7 +195,7 @@ export class CardPaper {
     this.faces = { inside: new Face(this.w, this.h), outside: new Face(this.w, this.h) };
     this.cut = makeCanvas(this.w, this.h);
     const cg = ctx2d(this.cut); cg.fillStyle = '#000'; cg.fillRect(0, 0, this.w, this.h);
-    this.cutAlpha = null; // lazily read
+    this.cutChanged(); // cached reads of the cut shape are rebuilt lazily
     this.isCut = false;
     this.stroke = makeCanvas(this.w, this.h);
     this.scratch = makeCanvas(this.w, this.h);
@@ -211,6 +211,7 @@ export class CardPaper {
     this.touched = false;
   }
   /** Mark part of a face (or all of it when no rect is given) to be redrawn next frame. */
+  cutChanged() { this.cutAlpha = null; this._cutShadow = null; }
   markFace(face, rect) {
     if (!face) return;
     const cur = this.dirtyRects.get(face);
@@ -298,11 +299,11 @@ export class CardPaper {
     this.cancelLive();
     if (e.kind === 'cut') {
       const g = ctx2d(this.cut); g.clearRect(0, 0, this.w, this.h); g.drawImage(e.cut, 0, 0);
-      this.isCut = e.isCut; this.cutAlpha = null;
+      this.isCut = e.isCut; this.cutChanged();
     } else if (e.kind === 'all' || e.kind === 'resize') {
       if (e.sizeId !== this.sizeId) this.resizeCanvases(e.sizeId);
       const g = ctx2d(this.cut); g.clearRect(0, 0, this.w, this.h); g.drawImage(e.cut, 0, 0);
-      this.isCut = e.isCut; this.cutAlpha = null;
+      this.isCut = e.isCut; this.cutChanged();
       for (const id of FACES) {
         const F = this.faces[id], s = e.faces[id];
         for (const k of ['objects', 'ink', 'protect']) { const c = ctx2d(F[k]); c.clearRect(0, 0, this.w, this.h); c.drawImage(s[k], 0, 0); }
@@ -338,7 +339,7 @@ export class CardPaper {
       F.glitter = []; F.texts = []; F.hasProtect = false; F.used = false;
     }
     const g = ctx2d(this.cut); g.fillStyle = '#000'; g.fillRect(0, 0, this.w, this.h);
-    this.isCut = false; this.cutAlpha = null;
+    this.isCut = false; this.cutChanged();
     this.emit();
   }
 
@@ -357,7 +358,7 @@ export class CardPaper {
       this.faces[id] = F;
     }
     this.cut = copyCanvas(old.cut, this.w, this.h);
-    this.cutAlpha = null;
+    this.cutChanged();
     for (const k of ['stroke', 'scratch', 'scratch2']) this[k] = makeCanvas(this.w, this.h);
     this.epoch++;
   }
@@ -537,7 +538,12 @@ export class CardPaper {
   }
 
   // ---------- cutting the card ----------
-  beginCut(face, pt) { this.cutting = { face, points: [this.toInside(face, pt)] }; this.dirty = true; }
+  beginCut(face, pt) {
+    const p = this.toInside(face, pt);
+    // which half of the sheet the cut is made in (matters when the card is folded shut)
+    this.cutting = { face, half: p.x < this.w / 2 ? 'left' : 'right', points: [p] };
+    this.dirty = true;
+  }
   addCutPoint(face, pt) {
     if (!this.cutting) return;
     const p = this.toInside(face, pt), pts = this.cutting.points, last = pts[pts.length - 1];
@@ -557,7 +563,11 @@ export class CardPaper {
     if (nearEdge(pts[n - 1])) pts.push(ext(pts[n - 1], pts[Math.max(0, n - 4)]));
   }
   /** Applies the cut. Returns the number of pieces the paper is now in (>1 means the user must choose). */
-  finishCut({ mirror = false } = {}) {
+  /**
+   * `onlyHalf`: when the card is folded shut the scissors only go through the layer being cut,
+   * so the cut is kept inside that half of the sheet.
+   */
+  finishCut({ onlyHalf = false } = {}) {
     const c = this.cutting;
     if (!c || c.points.length < 2) { this.cutting = null; this.dirty = true; return 0; }
     this.extendCutEnds();
@@ -565,12 +575,11 @@ export class CardPaper {
     this.recordCut();
     const g = ctx2d(this.cut);
     g.save(); g.globalCompositeOperation = 'destination-out';
+    if (onlyHalf) { g.beginPath(); g.rect(c.half === 'left' ? 0 : this.w / 2, 0, this.w / 2, this.h); g.clip(); }
     g.lineWidth = 3; g.lineCap = 'round'; g.lineJoin = 'round';
     g.beginPath(); c.points.forEach((p, i) => (i ? g.lineTo(p.x, p.y) : g.moveTo(p.x, p.y))); g.stroke();
-    // a closed card is two layers of paper: the scissors go through both halves
-    if (mirror) { g.beginPath(); c.points.forEach((p, i) => (i ? g.lineTo(this.w - p.x, p.y) : g.moveTo(this.w - p.x, p.y))); g.stroke(); }
     g.restore();
-    this.isCut = true; this.cutAlpha = null; this.touched = true;
+    this.isCut = true; this.cutChanged(); this.touched = true;
     const { labels, pieces } = labelPieces(this.readCutAlpha(), this.w, this.h, Math.round(this.w * this.h * 0.002));
     if (pieces.length <= 1) {
       this.keepPiece(labels, pieces[0]?.id ?? 1);
@@ -611,7 +620,7 @@ export class CardPaper {
     const d = img.data;
     for (let i = 0; i < labels.length; i++) if (labels[i] === id) d[i * 4 + 3] = 255;
     ctx2d(this.cut).putImageData(img, 0, 0);
-    this.cutAlpha = null;
+    this.cutChanged();
   }
 
   // ---------- rendering ----------
@@ -656,8 +665,9 @@ export class CardPaper {
     if (live?.sparkles?.length) this.paintSparkles(g, t, live.sparkles);
     // the line left by folding the sheet in half (shown on screen; exports draw their own)
     this.paintCrease(g, face);
-    // the paper's shape (cuts)
+    // the paper's shape (cuts), with a soft shadow along every cut edge so holes are easy to see
     if (this.isCut) {
+      this.paintCutShadow(g, face);
       g.globalCompositeOperation = 'destination-in';
       this.drawCutShape(g, face);
       g.globalCompositeOperation = 'source-over';
@@ -716,6 +726,44 @@ export class CardPaper {
     this.dirty = false;
     this.dirtyRects.clear();
     return drawn;
+  }
+
+  /**
+   * Shadows for cuts (built once per cut):
+   *  - edge: a soft dark rim on the paper along every cut edge, so holes and trimmed edges stand out;
+   *  - under: when the card is folded shut, the cover casts a shadow into the hole onto the page below
+   *    (seen through the hole, it is the inside of the other half – the hole mirrored across the fold).
+   */
+  cutShadows() {
+    if (this._cutShadow) return this._cutShadow;
+    const W = this.w, H = this.h;
+    const hole = makeCanvas(W, H), hg = ctx2d(hole);
+    hg.fillStyle = '#000'; hg.fillRect(0, 0, W, H);
+    hg.globalCompositeOperation = 'destination-out'; hg.drawImage(this.cut, 0, 0);
+
+    const edge = makeCanvas(W, H), eg = ctx2d(edge);
+    eg.filter = 'blur(16px)'; eg.globalAlpha = 0.55; eg.drawImage(hole, 4, 6);
+    eg.filter = 'blur(4px)'; eg.globalAlpha = 0.75; eg.drawImage(hole, 1, 2);
+    eg.filter = 'none';
+
+    const under = makeCanvas(W, H), ug = ctx2d(under);
+    ug.save(); ug.translate(W, 0); ug.scale(-1, 1);
+    ug.filter = 'blur(18px)'; ug.globalAlpha = 0.85; ug.drawImage(this.cut, -8, 8); // the cover's paper, blurred
+    ug.filter = 'none'; ug.globalAlpha = 1;
+    ug.globalCompositeOperation = 'destination-in'; ug.drawImage(hole, 0, 0); // only inside the hole
+    ug.restore();
+
+    this._cutShadow = { edge, under };
+    return this._cutShadow;
+  }
+  paintCutShadow(g, face) {
+    const { edge, under } = this.cutShadows();
+    g.save();
+    g.globalCompositeOperation = 'source-over';
+    if (face === 'inside' && this.layered) g.drawImage(under, 0, 0);
+    if (face === 'outside') { g.translate(this.w, 0); g.scale(-1, 1); }
+    g.drawImage(edge, 0, 0);
+    g.restore();
   }
 
   paintCrease(g, face) {
@@ -788,7 +836,7 @@ export class CardPaper {
     g.drawImage(F.objects, 0, 0);
     g.drawImage(F.ink, 0, 0);
     this.paintSparkles(g, t, F.glitter);
-    if (this.isCut) { g.globalCompositeOperation = 'destination-in'; this.drawCutShape(g, face); }
+    if (this.isCut) { this.paintCutShadow(g, face); g.globalCompositeOperation = 'destination-in'; this.drawCutShape(g, face); }
     return c;
   }
   flat(t = 0) { return this.flatFace('inside', t); }
@@ -846,7 +894,7 @@ export class CardPaper {
     const g = ctx2d(this.cut);
     if (L.cut) { g.clearRect(0, 0, this.w, this.h); g.drawImage(await loadImg(L.cut), 0, 0, this.w, this.h); this.isCut = true; }
     else { g.fillStyle = '#000'; g.fillRect(0, 0, this.w, this.h); this.isCut = false; }
-    this.cutAlpha = null;
+    this.cutChanged();
     this.touched = true;
     this.emit();
   }

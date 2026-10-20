@@ -30,7 +30,7 @@ GitHub Actions (`.github/workflows/ci.yml`) runs the same three steps on every p
 | Draw | Press on a pen on the left of the desk and drag straight onto the card (or click it, then draw). Thickness, transparency and "line shape" (wobbly → ruler-straight) are in the panel at the bottom. |
 | Erase drawing | Pick up the pink eraser. It removes only what was drawn; stickers, tape and text can only be removed with Undo. |
 | Cut tape | Click a tape roll, drag on the card to pull tape out, release. The roll waits at the end of the tape; drag the scissors across the tape to cut it (the card is never cut in this mode). |
-| Cut the card | Pick up the scissors on their own and drag along the cut (start outside the card to cut in from an edge). If the card splits, click the piece to keep. |
+| Cut the card | Pick up the scissors on their own and drag along the cut (start outside the card to cut in from an edge). If the card splits, click the piece to keep. On a folded card only the layer you cut is cut (a hole in the back cover never shows on the front). Cut edges and holes get a soft shadow so you can see them. |
 | Stickers / text | Click the sticker sheet or the "Aa" pad, choose, then click the card. The text preview shows exactly how it will look; the notepad stays out of the way. |
 | Colours | Colour wheel for any colour, "Pick from card" (or the pipette on the desk) to copy a colour from the card, and 12 "My colours" slots: click an empty slot to put your current colour in it, click a filled slot to use its colour, double-click a filled slot to replace it with your current colour, right-click to empty it. Every project has its own palette: a new card starts empty, a saved design remembers its colours. |
 | Reset rotation | "🎯 Reset rotation" at the top puts the card back flat, the way it started. |
@@ -38,7 +38,7 @@ GitHub Actions (`.github/workflows/ci.yml`) runs the same three steps on every p
 | Card size | Menu → Card size, at any time; the design is scaled to fit and Undo brings the old size back. |
 | Background colour | "Background" at the top: pastel list or "Any colour…". |
 | Undo / Erase all | Undo keeps up to 150 steps. "Erase all" asks for confirmation in the app, then clears both sides, tape, stickers, text and cuts (it can be undone too). |
-| Put a tool down | Click anywhere on the desk (not the card) to leave it there. "Put it back", Esc or right-click returns it to its usual place. |
+| Put a tool down | Click anywhere on the desk (not the card) to leave it there. If the card later covers it (opened, turned or resized over it), the tool rolls out to the nearest free spot. "Put it back", Esc or right-click returns it to its usual place. |
 | Open / close the card | The card starts folded on its front cover. Drag it sideways to open or close it – from the front or the back, in any rotation: the sheet nearest to you turns towards you. While you hold the card (a drag turns it), use "Open card" / "Close ←" / "Close →" at the top or the O key, which work in any position. |
 
 ## Rules from the project brief and where they live

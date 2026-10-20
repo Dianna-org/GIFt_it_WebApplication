@@ -146,7 +146,8 @@ function handleUp() {
     finishTapeCut();
   } else if (tool === 'scissors' && paper.cutting) {
     pointer.snipUntil = performance.now() + 700;
-    const n = paper.finishCut({ mirror: Math.abs(Math.abs(fold.cur[0]) - Math.abs(fold.cur[1])) > 0.98 }); // a closed card is cut through both halves
+    // a folded card: only the layer being cut is cut, never the half underneath
+    const n = paper.finishCut({ onlyHalf: Math.abs(Math.abs(fold.cur[0]) - Math.abs(fold.cur[1])) > 0.98 });
     if (n > 0) s.markDirty();
     if (n > 1) s.showToast('The card is in pieces – click the piece you want to keep.');
   }
@@ -375,6 +376,9 @@ export function Card() {
       else fold.cur[i] += (s.halves[i] - fold.cur[i]) * ease;
     }
     const [c1, c2] = fold.cur;
+    // folded shut: the page under a hole in the cover shows the cover's shadow
+    const layered = Math.abs(Math.abs(c1) - Math.abs(c2)) > 0.9;
+    if (paper.layered !== layered) { paper.layered = layered; if (paper.isCut) paper.dirty = true; }
     const valley = FOLD * (1 - Math.min(1, Math.abs(c1))) * (1 - Math.min(1, Math.abs(c2)));
     const turn = Math.PI - 0.006;
     leftHinge.current.rotation.y = c1 * turn + valley;
