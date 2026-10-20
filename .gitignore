@@ -1,0 +1,63 @@
+# ---------------------------------------------------------------- secrets
+# Real settings (JWT key etc.). Commit only .env.example.
+.env
+.env.*
+!.env.example
+*.pem
+*.key
+*.pfx
+appsettings.*.local.json
+secrets.json
+
+# ---------------------------------------------------------------- frontend (React / Vite / Node)
+node_modules/
+dist/
+dist-ssr/
+.vite/
+*.local
+coverage/
+.eslintcache
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+pnpm-debug.log*
+
+# ---------------------------------------------------------------- backend (ASP.NET / .NET)
+bin/
+obj/
+[Dd]ebug/
+[Rr]elease/
+*.user
+*.suo
+*.userprefs
+*.rsuser
+TestResults/
+*.trx
+*.coverage
+*.coveragexml
+project.lock.json
+.vs/
+
+# ---------------------------------------------------------------- logs and temporary files
+logs/
+*.log
+*.tmp
+*.swp
+*~
+
+# ---------------------------------------------------------------- local database dumps / backups
+*.archive
+dump/
+backup/
+
+# ---------------------------------------------------------------- editors and operating systems
+.vscode/*
+!.vscode/extensions.json
+.idea/
+*.sublime-workspace
+.DS_Store
+Thumbs.db
+desktop.ini
+
+# ---------------------------------------------------------------- Claude Code local files
+.claude/settings.local.json

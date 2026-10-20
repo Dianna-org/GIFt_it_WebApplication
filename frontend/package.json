@@ -1,0 +1,26 @@
+{
+  "name": "birthday-card-studio",
+  "private": true,
+  "version": "1.0.0",
+  "type": "module",
+  "scripts": {
+    "dev": "vite",
+    "build": "vite build",
+    "test": "vitest run"
+  },
+  "dependencies": {
+    "@react-three/fiber": "8.17.10",
+    "@tensorflow/tfjs": "4.22.0",
+    "gifenc": "1.0.3",
+    "nsfwjs": "4.2.1",
+    "react": "18.3.1",
+    "react-dom": "18.3.1",
+    "three": "0.169.0",
+    "zustand": "4.5.5"
+  },
+  "devDependencies": {
+    "@vitejs/plugin-react": "4.3.3",
+    "vite": "5.4.10",
+    "vitest": "2.1.4"
+  }
+}
