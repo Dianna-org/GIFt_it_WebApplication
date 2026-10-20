@@ -32,7 +32,8 @@ GitHub Actions (`.github/workflows/ci.yml`) runs the same three steps on every p
 | Cut tape | Click a tape roll, drag on the card to pull tape out, release. The roll waits at the end of the tape; drag the scissors across the tape to cut it (the card is never cut in this mode). |
 | Cut the card | Pick up the scissors on their own and drag along the cut (start outside the card to cut in from an edge). If the card splits, click the piece to keep. |
 | Stickers / text | Click the sticker sheet or the "Aa" pad, choose, then click the card. The text preview shows exactly how it will look; the notepad stays out of the way. |
-| Colours | Colour wheel for any colour, "Pick from card" (or the pipette on the desk) to copy a colour from the card, and 12 "My colours" slots you fill yourself (right-click to empty one). |
+| Colours | Colour wheel for any colour, "Pick from card" (or the pipette on the desk) to copy a colour from the card, and 12 "My colours" slots: click an empty slot to put your current colour in it, click a filled slot to use its colour, double-click a filled slot to replace it with your current colour, right-click to empty it. Every project has its own palette: a new card starts empty, a saved design remembers its colours. |
+| Reset rotation | "🎯 Reset rotation" at the top puts the card back flat, the way it started. |
 | Pick up and turn the card | With no tool in hand, click the card. Drag to turn it (Shift = diagonal); click it or the desk to put it down. "Turn card" at the top turns it on three axes: vertical, longitudinal, diagonal. Both sides can be decorated. |
 | Card size | Menu → Card size, at any time; the design is scaled to fit and Undo brings the old size back. |
 | Background colour | "Background" at the top: pastel list or "Any colour…". |

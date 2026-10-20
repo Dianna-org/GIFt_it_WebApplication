@@ -29,6 +29,8 @@ public class Design
     public string Thumbnail { get; set; } = "";
     /// <summary>Editable layers (PNG data URLs): inObjects, inInk, inProtect, outObjects, outInk, outProtect, cut.</summary>
     public Dictionary<string, string> Layers { get; set; } = new();
+    /// <summary>The project's "My colours" palette (hex colours, "" = empty slot).</summary>
+    public List<string> Palette { get; set; } = new();
     /// <summary>Every text typed onto the card; stored so the server can moderate it.</summary>
     public List<string> Texts { get; set; } = new();
     public DateTime UpdatedAt { get; set; } = DateTime.UtcNow;
@@ -36,4 +38,4 @@ public class Design
 
 public record RegisterRequest(string Email, string DisplayName, string Password, DateTime BirthDate);
 public record LoginRequest(string Email, string Password);
-public record DesignRequest(string? Title, string CardSize, string Background, string Image, string? Mask, string Thumbnail, List<string>? Texts, Dictionary<string, string>? Layers);
+public record DesignRequest(string? Title, string CardSize, string Background, string Image, string? Mask, string Thumbnail, List<string>? Texts, Dictionary<string, string>? Layers, List<string>? Palette = null);

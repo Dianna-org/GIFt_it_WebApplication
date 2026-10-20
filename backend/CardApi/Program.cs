@@ -136,6 +136,8 @@ IResult? Validate(DesignRequest r)
     if (!cardSizes.Contains(r.CardSize ?? "")) return Results.BadRequest(new { error = "Unknown card size." });
     if (r.Layers != null && r.Layers.Any(kv => !layerKeys.Contains(kv.Key) || !kv.Value.StartsWith("data:image/png;base64,")))
         return Results.BadRequest(new { error = "Invalid layer data." });
+    if (r.Palette != null && (r.Palette.Count > 12 || r.Palette.Any(c => c.Length > 0 && !System.Text.RegularExpressions.Regex.IsMatch(c, "^#[0-9a-fA-F]{6}$"))))
+        return Results.BadRequest(new { error = "Invalid colour palette." });
     if (!r.Image.StartsWith("data:image/png;base64,") || !r.Thumbnail.StartsWith("data:image/"))
         return Results.BadRequest(new { error = "Invalid image data." });
     if (r.Mask is { Length: > 0 } && !r.Mask.StartsWith("data:image/png;base64,"))
@@ -175,7 +177,7 @@ designsApi.MapPost("/", async (DesignRequest r, ClaimsPrincipal p, IMongoCollect
     var d = new Design
     {
         UserId = uid, Title = r.Title?.Trim() ?? "", CardSize = r.CardSize, Background = r.Background,
-        Image = r.Image, Mask = r.Mask ?? "", Thumbnail = r.Thumbnail, Texts = r.Texts ?? new(), Layers = r.Layers ?? new(), UpdatedAt = DateTime.UtcNow
+        Image = r.Image, Mask = r.Mask ?? "", Thumbnail = r.Thumbnail, Texts = r.Texts ?? new(), Layers = r.Layers ?? new(), Palette = r.Palette ?? new(), UpdatedAt = DateTime.UtcNow
     };
     await designs.InsertOneAsync(d);
     return Results.Ok(new { id = d.Id, updatedAt = d.UpdatedAt });
@@ -191,7 +193,7 @@ designsApi.MapPut("/{id}", async (string id, DesignRequest r, ClaimsPrincipal p,
         Builders<Design>.Update
             .Set(d => d.Title, r.Title?.Trim() ?? "").Set(d => d.CardSize, r.CardSize).Set(d => d.Background, r.Background)
             .Set(d => d.Image, r.Image).Set(d => d.Mask, r.Mask ?? "").Set(d => d.Thumbnail, r.Thumbnail)
-            .Set(d => d.Texts, r.Texts ?? new()).Set(d => d.Layers, r.Layers ?? new()).Set(d => d.UpdatedAt, now));
+            .Set(d => d.Texts, r.Texts ?? new()).Set(d => d.Layers, r.Layers ?? new()).Set(d => d.Palette, r.Palette ?? new()).Set(d => d.UpdatedAt, now));
     return res.MatchedCount == 0 ? Results.NotFound() : Results.Ok(new { id, updatedAt = now });
 });
 

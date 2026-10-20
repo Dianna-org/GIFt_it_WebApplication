@@ -32,6 +32,7 @@ check "needs a token"            "401" "$(curl -s -o /dev/null -w '%{http_code}'
 check "profane text is blocked"  "aren't allowed" "$(curl -s -X POST "$BASE/designs" -H "$H" -H "$AUTH" -d "$(body t 'what the fuck')")"
 C="$(curl -s -X POST "$BASE/designs" -H "$H" -H "$AUTH" -d "$(body first hello)")"
 check "design saved"             '"id"' "$C"
+check "bad palette refused"      "Invalid colour palette" "$(curl -s -X POST "$BASE/designs" -H "$H" -H "Authorization: Bearer $T" -d "{\"cardSize\":\"a4\",\"background\":\"#fff\",\"image\":\"$PNG\",\"thumbnail\":\"data:image/jpeg;base64,AA\",\"palette\":[\"red\"]}")"
 check "bad layer name refused"   "Invalid layer" "$(curl -s -X POST "$BASE/designs" -H "$H" -H "Authorization: Bearer $T" -d "{\"cardSize\":\"a4\",\"background\":\"#fff\",\"image\":\"$PNG\",\"thumbnail\":\"data:image/jpeg;base64,AA\",\"layers\":{\"evil\":\"x\"}}")"
 ID="$(echo "$C" | python3 -c "import sys,json;print(json.load(sys.stdin)['id'])")"
 check "saving again reuses slot" '"id"' "$(curl -s -X PUT "$BASE/designs/$ID" -H "$H" -H "$AUTH" -d "$(body renamed hello)")"

@@ -28,6 +28,7 @@ export async function saveDesign() {
     const payload = {
       title: s.title.trim(), cardSize: s.cardSize, background: s.bg,
       image: data.image, layers: data.layers, thumbnail: s.paper.thumbnail(), texts: data.texts,
+      palette: s.myColors.map((c) => c || ''),
     };
     if (s.designId) {
       try { await api.updateDesign(s.designId, payload); }

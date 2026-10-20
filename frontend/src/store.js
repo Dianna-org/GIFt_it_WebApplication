@@ -11,7 +11,13 @@ const write = (key, value) => {
 
 const saved = read('cardstudio.session', null);
 export const MY_COLOR_SLOTS = 12;
-const savedColors = read('cardstudio.colors', null);
+const emptyPalette = () => Array(MY_COLOR_SLOTS).fill(null);
+/** A saved design's palette, always MY_COLOR_SLOTS long. */
+export function normalizePalette(list) {
+  const out = emptyPalette();
+  (Array.isArray(list) ? list : []).slice(0, MY_COLOR_SLOTS).forEach((c, i) => { out[i] = /^#[0-9a-f]{6}$/i.test(c || '') ? c : null; });
+  return out;
+}
 
 const toolSettings = {
   ...Object.fromEntries(Object.entries(DRAW_TOOLS).map(([k, v]) => [k, { size: v.size, opacity: v.opacity, straight: v.straight }])),
@@ -47,7 +53,8 @@ export const useStore = create((set, get) => ({
   tool: null, // crayon | marker | highlighter | brush | glitter | eraser | picker | tape | scissors | sticker | text
   prevTool: null, // tool to go back to after using the colour picker
   color: '#e63946',
-  myColors: Array.isArray(savedColors) && savedColors.length === MY_COLOR_SLOTS ? savedColors : Array(MY_COLOR_SLOTS).fill(null),
+  // "My colours" belong to the project: a new card starts with an empty palette, a saved design keeps its own.
+  myColors: emptyPalette(),
   toolSettings,
   spots: {}, // where tools were left on the desk (tool id -> {x, y, yaw}); missing = their usual place
   tapePattern: TAPE_PATTERNS[0].id,
@@ -108,15 +115,19 @@ export const useStore = create((set, get) => ({
     const i = list.indexOf(null);
     if (i < 0) return 'full';
     list[i] = color;
-    write('cardstudio.colors', list);
-    set({ myColors: list });
+    set({ myColors: list, dirtySinceSave: true });
     return 'ok';
+  },
+  /** Put a colour into a slot, empty or not. */
+  setMyColor: (i, color) => {
+    const list = get().myColors.slice();
+    list[i] = color;
+    set({ myColors: list, dirtySinceSave: true });
   },
   removeMyColor: (i) => {
     const list = get().myColors.slice();
     list[i] = null;
-    write('cardstudio.colors', list);
-    set({ myColors: list });
+    set({ myColors: list, dirtySinceSave: true });
   },
   setToolSetting: (tool, patch) =>
     set((s) => ({ toolSettings: { ...s.toolSettings, [tool]: { ...s.toolSettings[tool], ...patch } } })),
@@ -154,12 +165,12 @@ export const useStore = create((set, get) => ({
   },
   newCard: () => {
     get().paper.cancelLive();
-    set({ paper: newPaper(get().cardSize), designId: null, title: '', dirtySinceSave: false, angles: { v: 0, l: 0, d: 0 }, cardHeld: false, halves: [1, 0] });
+    set({ paper: newPaper(get().cardSize), designId: null, title: '', dirtySinceSave: false, angles: { v: 0, l: 0, d: 0 }, cardHeld: false, halves: [1, 0], myColors: emptyPalette() });
   },
   async openDesign(d) {
     const paper = newPaper(d.cardSize);
     await paper.load(d);
-    set({ cardSize: d.cardSize, paper, designId: d.id, title: d.title || '', bg: d.background || get().bg, angles: { v: 0, l: 0, d: 0 }, cardHeld: false, dirtySinceSave: false });
+    set({ cardSize: d.cardSize, paper, designId: d.id, title: d.title || '', bg: d.background || get().bg, myColors: normalizePalette(d.palette), angles: { v: 0, l: 0, d: 0 }, cardHeld: false, dirtySinceSave: false });
   },
 
   setSession: (user, token) => {

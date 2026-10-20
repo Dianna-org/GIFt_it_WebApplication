@@ -22,7 +22,11 @@ function ColorPalette() {
   const myColors = useStore((s) => s.myColors);
   const setColor = useStore((s) => s.setColor);
   const addMyColor = useStore((s) => s.addMyColor);
+  const setMyColor = useStore((s) => s.setMyColor);
   const removeMyColor = useStore((s) => s.removeMyColor);
+  // a double-click starts with a click, which already switched to the slot's colour:
+  // remember the colour you had before, that is the one that goes into the slot
+  const before = useRef(color);
   const tool = useStore((s) => s.tool);
   const setTool = useStore((s) => s.setTool);
   const showToast = useStore((s) => s.showToast);
@@ -39,11 +43,13 @@ function ColorPalette() {
         <span className="palette-title">My colours</span>
         {myColors.map((c, i) => c ? (
           <button key={i} className={'swatch' + (c.toLowerCase() === color.toLowerCase() ? ' on' : '')}
-            style={{ background: c }} onClick={() => setColor(c)}
+            style={{ background: c }}
+            onClick={(e) => { if (e.detail <= 1) { before.current = color; setColor(c); } }}
+            onDoubleClick={() => { setMyColor(i, before.current); setColor(before.current); }}
             onContextMenu={(e) => { e.preventDefault(); removeMyColor(i); }}
-            aria-label={`Colour ${c}`} title={`${c} – right-click to remove`} />
+            aria-label={`Colour ${c}`} title={`${c} – click to use · double-click to replace it with your current colour · right-click to empty`} />
         ) : (
-          <button key={i} className="swatch empty" onClick={add} aria-label="Empty slot – add the current colour" title="Empty – click to save the current colour here" />
+          <button key={i} className="swatch empty" onClick={() => setMyColor(i, color)} aria-label="Empty slot – put the current colour here" title="Empty – click to put your current colour here" />
         ))}
       </div>
       <div className="palette">
@@ -292,6 +298,7 @@ export function TopBar() {
         <button className="btn danger-soft" onClick={eraseAll} title="Erase everything on the card">🧽 Erase all</button>
         <OpenClose />
         <TurnCard />
+        <button className="btn" onClick={() => useStore.getState().resetCard()} title="Put the card back flat, the way it started">🎯 Reset rotation</button>
         <BgPicker />
       </div>
       <button className="menu-btn" onClick={() => setMenu(!menuOpen)} aria-label="Open menu" aria-expanded={menuOpen}>☰</button>
