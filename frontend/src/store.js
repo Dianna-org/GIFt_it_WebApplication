@@ -11,6 +11,7 @@ const write = (key, value) => {
 
 const saved = read('cardstudio.session', null);
 export const MY_COLOR_SLOTS = 12;
+export const ZOOM_MAX = 8;
 const emptyPalette = () => Array(MY_COLOR_SLOTS).fill(null);
 /** A saved design's palette, always MY_COLOR_SLOTS long. */
 export function normalizePalette(list) {
@@ -45,6 +46,9 @@ export const useStore = create((set, get) => ({
   // Fold of the left and right half of the sheet (see scene/Card.jsx). [1, 0] = closed on the front cover.
   halves: [1, 0],
   bg: DEFAULT_BG,
+  // Zoom on the card: 0 = normal view; otherwise the screen splits (tools left, magnified card right).
+  zoom: 0,
+  zoomOffset: { x: 0, y: 0 }, // where the zoomed view looks, relative to the card's middle (world units)
   designId: null,
   title: '',
   dirtySinceSave: false,
@@ -149,6 +153,10 @@ export const useStore = create((set, get) => ({
     cardHeld: s.cardHeld || axis !== 'v',
   })),
   setCardHeld: (cardHeld) => set({ cardHeld }),
+  zoomIn: () => set((s) => (s.zoom ? { zoom: Math.min(ZOOM_MAX, +(s.zoom * 1.5).toFixed(2)) } : { zoom: 2, zoomOffset: { x: 0, y: 0 } })),
+  setZoom: (zoom) => set({ zoom: Math.max(1, Math.min(ZOOM_MAX, zoom)) }),
+  zoomOut: () => set({ zoom: 0, zoomOffset: { x: 0, y: 0 } }),
+  setZoomOffset: (zoomOffset) => set({ zoomOffset }),
   /** Back to how the card started: flat, not turned, sheet face-up (open stays open, closed shows the front cover). */
   resetCard: () => set((s) => {
     const [a1, a2] = s.halves;

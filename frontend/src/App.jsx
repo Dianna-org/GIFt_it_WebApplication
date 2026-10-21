@@ -3,6 +3,7 @@ import { Desk } from './scene/Desk.jsx';
 import { TopBar, ToolOptions, HoverLabel, Toast } from './ui/Toolbar.jsx';
 import { Menu } from './ui/Menu.jsx';
 import { AuthModal, ConfirmDialog, ExportModal, PortfolioModal } from './ui/Modals.jsx';
+import { ZoomOverlay } from './ui/Zoom.jsx';
 import { useStore } from './store.js';
 import { putCardDown, turnCardPage } from './scene/Card.jsx';
 import { heldToolId, putBackTool } from './scene/Desk.jsx';
@@ -17,6 +18,14 @@ export function App() {
       const s = useStore.getState();
       if (e.key === 'Escape') { if (s.tool) putBackTool(heldToolId(s)); else s.clearTool(); s.setMenu(false); if (s.cardHeld) putCardDown(); }
       if (e.key === 'o') turnCardPage(-1);
+      if (e.key === '+' || e.key === '=') s.zoomIn();
+      if (e.key === '-' && s.zoom) s.zoomOut();
+      if (s.zoom && e.key.startsWith('Arrow')) { // look around the zoomed card
+        e.preventDefault();
+        const step = 1.2 / s.zoom, o = s.zoomOffset;
+        const d = { ArrowLeft: [-step, 0], ArrowRight: [step, 0], ArrowUp: [0, step], ArrowDown: [0, -step] }[e.key];
+        s.setZoomOffset({ x: o.x + d[0], y: o.y + d[1] });
+      }
       if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'z') { e.preventDefault(); if (s.paper.undo()) s.markDirty(); }
       if (e.key === 'q') s.turnCard('v', -15);
       if (e.key === 'e') s.turnCard('v', 15);
@@ -41,6 +50,7 @@ export function App() {
       {panel === 'portfolio' && <PortfolioModal />}
       {panel === 'export' && <ExportModal />}
       <ConfirmDialog />
+      <ZoomOverlay />
     </>
   );
 }

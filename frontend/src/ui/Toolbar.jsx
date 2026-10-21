@@ -4,6 +4,7 @@ import { DRAW_TOOLS, FONTS, PASTELS, TAPE_PATTERNS, TOOL_LABELS } from '../confi
 import { STICKERS, stickerCanvas } from '../engine/stickers.js';
 import { cardIsOpen, putCardDown, turnCardPage } from '../scene/Card.jsx';
 import { eraseAllWithConfirm } from '../actions.js';
+import { ZoomControls } from './Zoom.jsx';
 import { heldToolId, putBackTool } from '../scene/Desk.jsx';
 
 function Slider({ label, value, min, max, onChange, suffix = '', hint }) {
@@ -302,6 +303,7 @@ export function TopBar() {
         <TurnCard />
         <button className="btn" onClick={() => useStore.getState().resetCard()} title="Put the card back flat, the way it started">🎯 Reset rotation</button>
         <button className="btn" onClick={() => useStore.getState().putBackAll()} title="Every tool goes back to its usual place">🧹 Put all tools back</button>
+        <ZoomControls />
         <BgPicker />
       </div>
       <button className="menu-btn" onClick={() => setMenu(!menuOpen)} aria-label="Open menu" aria-expanded={menuOpen}>☰</button>

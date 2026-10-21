@@ -237,10 +237,45 @@ If something is unclear, please ask me, and I will try to explain it better.
 
 --------------------------------------------------------------------------------------------------------------------------------------------------------
 
+Ok, I have some adjustments I would like to add for this app:
+- please look at Screenshot3.png: place change the colour button when being hovered over/ selected, from white to another colour (if it stays like this, when the button is selected/ pressed, the user cannot read anymore the
+  text writtenm on the button);
+- please add a Zoom in button, on the top (this button is always visible) where the user can choose how much zoom they want for the birthday card (so the Zoom in ONLY zooms in the birthday card; how:
+	=> the web application will break in 2: 
+		- the part with the tools ("the table" - the left side); this part remains the same, no changes there;
+		- the zoomed in birthday card (the right side); the user can zoom in as much as they want (but there will be a zoom limit); there has to be a zoom map (to show where the user is on the birthday card: maybe showing
+		  it on a relatively small, but visible, rectangle image, representing the entire birthday card surface the user is seeing (backside, front side, or opened), and a red rectangle, reprezenting the zoomed in part, so
+		  the user knows where they are on the birthday card);
+	=> when AND ONLY WHEN the user zooms in, there will be a button (next to the Zoom in button), called Zoom out, which will zoom out to the birthday card's original Zoom;
+	  (the user can select the zoom in/ zoom out part, like how much zoom in or out the user wants to see, but the Zoom out button is there to make it easier for the user to return to the original zoom of the card);
+  
+If something is unclear, please ask me, and I will try to explain it better.
 
-- please add a Zoom in button, where the user can choose how much zoom they want for the birthday card (so the Zoom in only zooms in ONLY th
+
+--------------------------------------------------------------------------------------------------------------------------------------------------------
+
+Ok, I have some adjustments I would like to add for this app:
+- please look at Screenshot4.png: there are times when I want to put down a tool, and the app lets me, or it does not, EVEN THOUGH there is enough space to put it there; please check to see why this thing happens, and please
+  fix it; also, the minimum space between tools (when the user wants to put down a tool using the mouse/ mousepad, there is a minimum distance between tools) is a bit too big; there are times when the user can see that there
+  and think that there is enough space to put down the tool, but the app doesn't let them; please make the distance between tools smaller, so the tools can be near to each other, but still further away from one another so they
+  don't touch or intertwine with one another;
+- when pressing the Zoom in button, please add an animation showing that it zooms in on the birthday card, and also, showcasing how the app breaks into 2 separate windows (and a reverse animation for zoom out); if it stays like 
+  this, it is quite complicated for the user to understand what's happening;
+- I don't like the Zoom in map; please add inside an image with the current side of the birthday card (including the possible drawing and changes the user made till then), and on top of that, add that red rectangle showing the
+  user where they are on the birthday card (right now, the map is an empty rectangle with a red rectangle showing where the user is, but it is hard to read and understant where the zoom in is on the page; 
+  => look at ZoomInMap.png for inspiration);
+  
+If something is unclear, please ask me, and I will try to explain it better.
+
+
+--------------------------------------------------------------------------------------------------------------------------------------------------------
+
+
+
 
 TODO:
+!!!!!!!!!!!!!!!!!!!!!!!!!!!! ask Claude to write inside a .txt file anything he has done for this app, so if he starts forgetting stuff, he can read that .txt file and remember what he has already done, so he shouldn't repeat
+	implementing something, or testing if it is implemented, or do extra work that is just using tokens and does not help implementing the project !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
 - change the name of the app to be: GIFt it! (we'll also have to work on a logo and font for this title, but we'll work on that later)
 - maybe include more details to the text box
 - include order details
@@ -259,4 +294,6 @@ TODO:
 	   (for example, if the stamp has the shape of a heart, when using lots of ink, every stamp will be the same; when using medium amounts of ink, there will be random spots on the stamp printed on the paper
 	    that are not so clearly defined, and when using a low amount of paper, every stamp printed on the paper it will be very random: one stamp can be a corner of the heart, one stamp can be the center of the heart, the
 	    next stamp can be the top of the heart, so on and so forth, BUT NEVER SHOULD THE STAMPS LOOK ALL THE SAME; the designs can repeat themselves, BUT they should be different one after the other);
+	    
+- maybe make the title+logo be a button where the user can see their account;
 

@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
-import { Canvas, useFrame, useThree } from '@react-three/fiber';
+import { Canvas, events as pointerEvents, useFrame, useThree } from '@react-three/fiber';
 import * as THREE from 'three';
 import { RoomEnvironment } from 'three/examples/jsm/environments/RoomEnvironment.js';
 import { useStore } from '../store.js';
@@ -7,6 +7,7 @@ import { cardDims, CANVAS_PX_W, TAPE_PATTERNS } from '../config.js';
 import { placeTextBox } from '../engine/paper.js';
 import { Card, canvasToWorld, cardCutOnDesk, cardMeshes, putCardDown, tapeCutOnDesk } from './Card.jsx';
 import { movePointer, pointer } from './pointer.js';
+import { aimCamera, hitCardPlane, offsetOf, SPLIT, zoomView } from './zoom.js';
 import {
   Brush, Crayon, Eraser, GlitterPen, Highlighter, HeldSticker, Marker, Pipette, Scissors, StickerSheet, TapeRoll, TextPad,
 } from './models.jsx';
@@ -87,7 +88,7 @@ let blockers = { t: 0, rects: [] };
 function screenBlockers() {
   const now = performance.now();
   if (now - blockers.t > 200) {
-    const els = document.querySelectorAll('.options, .topbar .btn, .topbar .logo, .menu-btn, .toast');
+    const els = document.querySelectorAll('.options, .topbar .btn, .topbar .logo, .topbar .zoom-ctl, .menu-btn, .toast, .zoom-area');
     blockers = { t: now, rects: [...els].map((e) => e.getBoundingClientRect()).map((r) => ({ l: r.left - 6, r: r.right + 6, t: r.top - 6, b: r.bottom + 6 })) };
   }
   return blockers.rects;
@@ -553,6 +554,146 @@ function RenderOnDemand() {
   return null;
 }
 
+
+// ------------------------------------------------------------------ split view for zooming
+const ndc = new THREE.Vector2();
+const ray = new THREE.Raycaster();
+
+/** Middle, size (as the camera sees it) and surface of the card, from its meshes. */
+function measureCard(mainCam) {
+  const pts = [];
+  for (const key of ['inside-left', 'inside-right']) {
+    const m = cardMeshes[key];
+    if (!m) continue;
+    m.updateWorldMatrix(true, false);
+    const { width: w, height: h } = m.geometry.parameters;
+    for (const [lx, ly] of [[-w / 2, -h / 2], [w / 2, -h / 2], [w / 2, h / 2], [-w / 2, h / 2]]) pts.push(m.localToWorld(new THREE.Vector3(lx, ly, 0)));
+  }
+  if (!pts.length) return false;
+  const z = zoomView;
+  z.centre.set(0, 0, 0);
+  pts.forEach((p) => z.centre.add(p));
+  z.centre.multiplyScalar(1 / pts.length);
+  mainCam.updateMatrixWorld();
+  z.right.setFromMatrixColumn(mainCam.matrixWorld, 0).normalize();
+  z.up.setFromMatrixColumn(mainCam.matrixWorld, 1).normalize();
+  let hw = 0, hh = 0;
+  for (const p of pts) { const d = p.clone().sub(z.centre); hw = Math.max(hw, Math.abs(d.dot(z.right))); hh = Math.max(hh, Math.abs(d.dot(z.up))); }
+  z.extent.hw = Math.max(0.5, hw); z.extent.hh = Math.max(0.5, hh);
+  const m = cardMeshes['inside-right'] || cardMeshes['inside-left'];
+  const n = new THREE.Vector3(0, 0, 1).applyQuaternion(m.getWorldQuaternion(new THREE.Quaternion()));
+  z.plane.setFromNormalAndCoplanarPoint(n, z.centre);
+  return true;
+}
+
+/** Draws the normal view, or – while zoomed – the split view and the zoom map. */
+function SplitRenderer() {
+  useFrame((state) => {
+    const { gl, scene, camera, size } = state;
+    const s = useStore.getState();
+    const z = zoomView;
+    const W = size.width, H = size.height;
+    gl.autoClear = false;
+    gl.setScissorTest(false);
+    gl.setViewport(0, 0, W, H);
+    gl.clear();
+    z.active = s.zoom > 0 && measureCard(camera);
+    if (!z.active) { gl.render(scene, camera); return; }
+
+    const sx = Math.round(W * SPLIT);
+    z.splitPx = sx;
+    gl.setScissorTest(true);
+    // left: exactly the normal picture of the desk, just cropped
+    gl.setScissor(0, 0, sx, H);
+    gl.render(scene, camera);
+    const autoShadows = gl.shadowMap.autoUpdate;
+    gl.shadowMap.autoUpdate = false; // shadows were already worked out for this frame
+    // right: the magnified card
+    const used = aimCamera(z.camera, camera, (W - sx) / H, s.zoom, s.zoomOffset);
+    gl.setViewport(sx, 0, W - sx, H);
+    gl.setScissor(sx, 0, W - sx, H);
+    gl.clear();
+    gl.render(scene, z.camera);
+    // the zoom map
+    const box = document.querySelector('.zoom-map-view');
+    const poly = document.querySelector('.zoom-map-rect');
+    if (box) {
+      const r = box.getBoundingClientRect(), c = gl.domElement.getBoundingClientRect();
+      const x = r.left - c.left, y = r.top - c.top;
+      aimCamera(z.mapCamera, camera, r.width / r.height, 1, { x: 0, y: 0 });
+      gl.setViewport(x, H - y - r.height, r.width, r.height);
+      gl.setScissor(x, H - y - r.height, r.width, r.height);
+      gl.clear();
+      gl.render(scene, z.mapCamera);
+      // red outline: the part of the card the zoomed view shows
+      if (poly) {
+        const corners = [[-1, -1], [1, -1], [1, 1], [-1, 1]].map(([ax, ay]) => {
+          ndc.set(ax, ay);
+          ray.setFromCamera(ndc, z.camera);
+          const hit = hitCardPlane(ray.ray);
+          if (!hit) return null;
+          hit.project(z.mapCamera);
+          return `${((hit.x + 1) / 2) * r.width},${((1 - hit.y) / 2) * r.height}`;
+        });
+        poly.setAttribute('points', corners.every(Boolean) ? corners.join(' ') : '');
+      }
+    }
+    gl.shadowMap.autoUpdate = autoShadows;
+    gl.setScissorTest(false);
+    gl.setViewport(0, 0, W, H);
+    // keep the stored offset inside the card
+    if (used.x !== s.zoomOffset.x || used.y !== s.zoomOffset.y) useStore.setState({ zoomOffset: { x: used.x, y: used.y } });
+  }, 1);
+  return null;
+}
+
+/** Pointer events use the zoomed camera on the right side of the split view. */
+function splitEvents(store) {
+  const base = pointerEvents(store);
+  return {
+    ...base,
+    compute(event, state) {
+      const z = zoomView;
+      if (z.active && event.offsetX >= z.splitPx) {
+        const w = state.size.width - z.splitPx;
+        state.pointer.set(((event.offsetX - z.splitPx) / w) * 2 - 1, -(event.offsetY / state.size.height) * 2 + 1);
+        state.raycaster.setFromCamera(state.pointer, z.camera);
+      } else {
+        state.pointer.set((event.offsetX / state.size.width) * 2 - 1, -(event.offsetY / state.size.height) * 2 + 1);
+        state.raycaster.setFromCamera(state.pointer, state.camera);
+      }
+    },
+  };
+}
+
+/** Mouse wheel over the zoomed card: zoom in/out around the pointer. */
+function useWheelZoom() {
+  useEffect(() => {
+    const el = document.querySelector('.desk');
+    if (!el) return undefined;
+    const wheel = (e) => {
+      const s = useStore.getState(), z = zoomView;
+      if (!s.zoom || !z.active) return;
+      const r = el.getBoundingClientRect();
+      const x = e.clientX - r.left, y = e.clientY - r.top;
+      if (x < z.splitPx) return;
+      e.preventDefault();
+      const next = Math.max(1, Math.min(8, s.zoom * Math.exp(-e.deltaY * 0.0015)));
+      ndc.set(((x - z.splitPx) / (r.width - z.splitPx)) * 2 - 1, -(y / r.height) * 2 + 1);
+      ray.setFromCamera(ndc, z.camera);
+      const hit = hitCardPlane(ray.ray);
+      let off = s.zoomOffset;
+      if (hit) { // keep the point under the pointer where it is
+        const h = offsetOf(hit), k = s.zoom / next;
+        off = { x: h.x + (off.x - h.x) * k, y: h.y + (off.y - h.y) * k };
+      }
+      useStore.setState({ zoom: next, zoomOffset: off });
+    };
+    el.addEventListener('wheel', wheel, { passive: false });
+    return () => el.removeEventListener('wheel', wheel);
+  }, []);
+}
+
 /** Leaving the app with the button held must not leave a stroke, drag or cut half-finished. */
 function releasePointer() {
   if (!pointer.down && !pointer.drawing) return;
@@ -629,18 +770,21 @@ function useDropOnDesk() {
 export function Desk() {
   const bg = useStore((s) => s.bg);
   useDropOnDesk();
+  useWheelZoom();
   return (
     <div className="desk" style={{ background: bg }}>
       <div className="desk-light" />
       <Canvas
         shadows="soft"
         frameloop="demand"
+        events={splitEvents}
         dpr={[1, 1.5]}
         camera={{ fov: 38, position: [0, -5, 11], near: 0.1, far: 80 }}
         gl={{ alpha: true, antialias: true, toneMapping: THREE.NeutralToneMapping, preserveDrawingBuffer: true }}
         onPointerMissed={() => { pointer.onCard = false; }}
       >
         <RenderOnDemand />
+        <SplitRenderer />
         <KeepToolsVisible />
         <Rig />
         <Studio />

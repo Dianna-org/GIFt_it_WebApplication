@@ -27,13 +27,18 @@ button { font: inherit; color: inherit; cursor: pointer; }
 .menu-btn:hover { filter: brightness(1.08); }
 
 .btn { background: var(--panel); border: 1px solid var(--line); border-radius: 999px; padding: 8px 14px; box-shadow: 0 2px 8px rgba(80, 50, 0, 0.1); display: inline-flex; align-items: center; gap: 6px; font-weight: 700; }
-.btn:hover:not(:disabled) { background: #fff; }
+.btn { transition: background-color 0.15s ease, filter 0.15s ease, transform 0.05s ease; }
+/* plain buttons: a soft warm tint on hover, a deeper one while pressed (text always stays readable) */
+.btn:hover:not(:disabled) { background: #fff2cf; border-color: rgba(60, 40, 10, 0.25); }
+.btn:active:not(:disabled) { background: #ffe39c; transform: translateY(1px); }
+.btn:focus-visible { outline: 3px solid var(--accent); outline-offset: 2px; }
 .btn:disabled { opacity: 0.45; cursor: default; }
 .btn.icon { padding: 6px 11px; }
 .btn.small { padding: 4px 10px; font-size: 13px; box-shadow: none; }
 .btn.wide { width: 100%; justify-content: center; margin-top: 8px; border-radius: 12px; }
 .btn.primary { background: var(--accent); color: var(--accent-ink); border-color: transparent; }
 .btn.primary:hover:not(:disabled) { background: #277b70; }
+.btn.primary:active:not(:disabled) { background: #1f6259; }
 .btn.danger { color: var(--danger); }
 .link { background: none; border: 0; color: var(--accent); text-decoration: underline; padding: 4px; }
 .dot { width: 16px; height: 16px; border-radius: 50%; border: 1px solid var(--line); display: inline-block; }
@@ -69,6 +74,7 @@ button { font: inherit; color: inherit; cursor: pointer; }
 .swatch.empty { background: repeating-linear-gradient(45deg, #fff, #fff 4px, #f1ece0 4px, #f1ece0 8px); border-style: dashed; cursor: copy; }
 .current { width: 40px; height: 22px; border-radius: 8px; border: 2px solid rgba(0, 0, 0, 0.12); display: inline-block; }
 .btn.active { background: var(--accent); color: #fff; }
+.btn.active:hover:not(:disabled) { background: #277b70; }
 .btn.danger-soft { color: var(--danger); }
 .options.choice { border-color: var(--accent); background: #effaf7; }
 .swatch { flex: 0 0 28px; width: 28px; height: 28px; border-radius: 50%; border: 2px solid rgba(0, 0, 0, 0.12); padding: 0; position: relative; }
@@ -140,4 +146,18 @@ textarea, select, .text, .form input { width: 100%; font: inherit; padding: 8px 
 .modal.confirm p { font-size: 16px; line-height: 1.45; margin: 4px 0 16px; }
 .row.end { justify-content: flex-end; }
 .btn.danger-solid { background: var(--danger); color: #fff; border-color: transparent; }
+.btn.danger-solid:hover:not(:disabled) { background: #a93226; }
+.btn.danger-solid:active:not(:disabled) { background: #8e2a20; }
 .head-actions { display: inline-flex; gap: 10px; align-items: center; }
+
+/* ---- zoom ---- */
+.zoom-ctl { display: inline-flex; gap: 8px; align-items: center; }
+.zoom-slider { display: inline-flex; align-items: center; gap: 6px; background: var(--panel); border: 1px solid var(--line); border-radius: 999px; padding: 4px 12px; box-shadow: 0 2px 8px rgba(80, 50, 0, 0.1); font-size: 13px; }
+.zoom-slider input { width: 110px; accent-color: var(--accent); }
+.zoom-slider b { min-width: 34px; text-align: right; font-variant-numeric: tabular-nums; }
+.zoom-area { position: fixed; top: 0; bottom: 0; right: 0; left: 46%; pointer-events: none; border-left: 3px solid rgba(255, 255, 255, 0.85); box-shadow: inset 12px 0 18px -14px rgba(60, 40, 0, 0.35); z-index: 1; }
+.zoom-map { position: fixed; right: 14px; top: 118px; width: 230px; background: rgba(255, 252, 244, 0.9); border: 1px solid var(--line); border-radius: 12px; padding: 6px; box-shadow: 0 6px 20px rgba(60, 40, 0, 0.2); z-index: 7; }
+.zoom-map-title { display: block; font-size: 11px; font-weight: 800; text-transform: uppercase; letter-spacing: 0.06em; color: var(--muted); margin: 0 2px 4px; }
+.zoom-map-view { position: relative; width: 216px; height: 150px; border-radius: 8px; overflow: hidden; cursor: crosshair; touch-action: none; background: #cdbf9a; }
+.zoom-map-svg { position: absolute; inset: 0; width: 100%; height: 100%; pointer-events: none; }
+.zoom-map-rect { fill: rgba(230, 57, 70, 0.12); stroke: #e63946; stroke-width: 2.5; stroke-linejoin: round; }
