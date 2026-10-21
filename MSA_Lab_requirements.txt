@@ -204,6 +204,41 @@ If something is unclear, please ask me, and I will try to explain it better.
 
 --------------------------------------------------------------------------------------------------------------------------------------------------------
 
+Ok, I have some adjustments I would like to add for this app:
+- when the user puts a piece of tape right at the corner of the birthday card, the user CANNOT cut that piece of tape, because the scissor's cut is too close to the background, and because I have specifed that no tool should
+  modify the background, this blocks the user from cutting the tape; therefore, I think it would be safe to let the scissors create cuts anywhere, there shouldn't be boundaries, so the scissor's cut can exceed the birthday card's
+  dimensions; BUT, when a user uses the scissors to try and cut only the background, nothing should happen;
+- when the user puts a tool down, and the tool is put down very close to another (maybe even touching), then the application should tell the user "hey, that place is already taken, put the tool somewhere else" and the user should
+  be blocked from putting down the tool in his/her hands UNTIL a free (empty) space is chosen (maybe a good warning message would be "Oops! This place is occupied by another tool. Please put it down in an empty spot :)")
+- when the user presses the Put down button for a tool, and that space is occupied by another tool the user had put down moments before, the program should check if the spot reserved for that tool is occupied: if it is occupied, put
+  down the tool somewhere in the vicinity of that tool's reserved space, somewhere free, in an unused space, and somewhere not too close to the other tools (if, for example, the other tools that were already put down by the user
+  are placed very poorly, with big distances to one another, and there is no free space for the tool in hand to be placed in their rightful place, the program will put the tool in the right side of the birthday card (kind of like
+  mirroring the tool's rightful place, but instead of putting it on the leftside, where it belongs, the program puts it on the rightside - and again, the program checks if there is enough space to put it there, if not, finds another
+  empty space on the righside); IF, FOR EXAMPLE, there is no space on the leftside AND on the righside, the Put down button should place the tool anywhere on the background WHERE IS ENOUGH SPACE FOR THE TOOL TO BE PLACED;
+- please add a Put back all tools, which makes all the tools go back to their rightful place (if all the tools are placed in random positions, and the user wants to "clean up", they can press this button, and all the tools go back
+  to where they were originally placed)
+
+If something is unclear, please ask me, and I will try to explain it better.
+
+
+--------------------------------------------------------------------------------------------------------------------------------------------------------
+
+Ok, I have some adjustments I would like to add for this app:
+- please look at Screenshot1.png: you can see the tape placed at the edge of the birthday card; the user cannot cut the tape, and there appears a message on top; please make sure the user can cut the tape, even if that means the 
+  scissor's cut will exceed the birthday card's dimensions, and please make sure that the user can cut the birthday card's margins in any way he wants (which means, again, that the scissor's cut will and can exceed the birthday
+  card's dimensions);
+- please look at Screenshot2.png: two tools are sittng right next to each other, even intertwine a bit; please make sure everything I told you above (about two tools NOT BEING ABLE TO BE PUT DOWN RIGHT NEXT TO EACH OTHER) is 
+  working properly; if you didn't understood what I said, no worries, please ask me what you did not understood, and I will explain it again;
+- there is no Put back all tools button; I want this button to be available and visible all the time, and work at all times: when all the tools are put anywhere on the background, when just some tools are moved from their place,
+  or even when just a tool is only a bit moved from it's place;
+  
+If something is unclear, please ask me, and I will try to explain it better.
+
+
+--------------------------------------------------------------------------------------------------------------------------------------------------------
+
+
+- please add a Zoom in button, where the user can choose how much zoom they want for the birthday card (so the Zoom in only zooms in ONLY th
 
 TODO:
 - change the name of the app to be: GIFt it! (we'll also have to work on a logo and font for this title, but we'll work on that later)
@@ -217,5 +252,11 @@ TODO:
 	will create; 
 - work on right menu design;
 - make a tutorial for beginners!!!!!!
-
+- add more tools: pen that draws lines withba certain design, stamps with different kinds of designs (and make sure that for the stamp, you can choose the amount of ink used:
+	=> lots of ink: the stamp is very visible; medium amount of ink: the stamp is still visible, but you can see that there wasn't enough ink for the stamp to be clear,
+	   or low amount of ink: the stamp is barely visible, maybe only a small part of de design of the stamp is visible;
+	=> depending on the amount of ink, I want every stamp to be random, meaning: every time the user uses the stamp, based on how much ink he/ she uses, the stamp will be different anytime
+	   (for example, if the stamp has the shape of a heart, when using lots of ink, every stamp will be the same; when using medium amounts of ink, there will be random spots on the stamp printed on the paper
+	    that are not so clearly defined, and when using a low amount of paper, every stamp printed on the paper it will be very random: one stamp can be a corner of the heart, one stamp can be the center of the heart, the
+	    next stamp can be the top of the heart, so on and so forth, BUT NEVER SHOULD THE STAMPS LOOK ALL THE SAME; the designs can repeat themselves, BUT they should be different one after the other);
 

@@ -94,10 +94,17 @@ export const useStore = create((set, get) => ({
     set({ tool: null });
   },
   /** Leave the tool in hand on the desk at (x, y). */
-  dropTool: (id, x, y) => {
+  dropTool: (id, x, y, yaw = (Math.random() - 0.5) * 0.6) => {
     const s = get();
     if (s.tool !== 'scissors') s.paper.cancelLive(); else s.paper.setGhost(null);
-    set({ tool: null, spots: { ...s.spots, [id]: { x, y, yaw: (Math.random() - 0.5) * 0.6 } } });
+    set({ tool: null, spots: { ...s.spots, [id]: { x, y, yaw } } });
+  },
+  /** Tidy up: every tool glides back to its usual place. */
+  putBackAll: () => {
+    const s = get();
+    if (s.paper.choice) s.paper.cancelChoice();
+    s.paper.cancelLive();
+    set({ tool: null, spots: {} });
   },
   /** "Put it back": the tool returns to its usual place. */
   putBack: (id) => {

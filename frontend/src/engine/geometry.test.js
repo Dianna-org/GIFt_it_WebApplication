@@ -14,6 +14,11 @@ describe('tape cutting', () => {
     const poly = cutTapeStrip(S, E, 40, { x: 80, y: -50 }, { x: 120, y: 50 });
     expect(poly[1].x).not.toBeCloseTo(poly[2].x);
   });
+  it('can extend a snip that went into the tape', () => {
+    const poly = cutTapeStrip(S, E, 40, { x: 100, y: -50 }, { x: 100, y: 5 }, { mustSpan: false });
+    expect(poly).toHaveLength(4);
+    expect(poly[2].y).toBeCloseTo(-20);
+  });
   it('rejects a cut that does not cross the whole strip', () => {
     expect(cutTapeStrip(S, E, 40, { x: 100, y: 30 }, { x: 100, y: 80 })).toBeNull();
     expect(cutTapeStrip(S, E, 40, { x: 300, y: -50 }, { x: 300, y: 50 })).toBeNull();

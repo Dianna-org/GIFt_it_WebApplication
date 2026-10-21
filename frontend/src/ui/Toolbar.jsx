@@ -4,7 +4,7 @@ import { DRAW_TOOLS, FONTS, PASTELS, TAPE_PATTERNS, TOOL_LABELS } from '../confi
 import { STICKERS, stickerCanvas } from '../engine/stickers.js';
 import { cardIsOpen, putCardDown, turnCardPage } from '../scene/Card.jsx';
 import { eraseAllWithConfirm } from '../actions.js';
-import { heldToolId } from '../scene/Desk.jsx';
+import { heldToolId, putBackTool } from '../scene/Desk.jsx';
 
 function Slider({ label, value, min, max, onChange, suffix = '', hint }) {
   return (
@@ -112,7 +112,9 @@ export function ToolOptions() {
     <div className="options">
       <div className="options-head">
         <strong>{tool ? TOOL_LABELS[tool] : cardHeld ? 'Holding the card' : 'Pick something from the desk'}</strong>
-        {tool && <button className="link" onClick={() => putBack(heldToolId(useStore.getState()))}>Put it back (Esc)</button>}
+        <span className="head-actions">
+          {tool && <button className="link" onClick={() => putBackTool(heldToolId(useStore.getState()))}>Put it back (Esc)</button>}
+        </span>
         {!tool && cardHeld && <button className="link" onClick={putCardDown}>Put the card down</button>}
       </div>
 
@@ -299,6 +301,7 @@ export function TopBar() {
         <OpenClose />
         <TurnCard />
         <button className="btn" onClick={() => useStore.getState().resetCard()} title="Put the card back flat, the way it started">🎯 Reset rotation</button>
+        <button className="btn" onClick={() => useStore.getState().putBackAll()} title="Every tool goes back to its usual place">🧹 Put all tools back</button>
         <BgPicker />
       </div>
       <button className="menu-btn" onClick={() => setMenu(!menuOpen)} aria-label="Open menu" aria-expanded={menuOpen}>☰</button>

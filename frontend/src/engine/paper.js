@@ -572,6 +572,14 @@ export class CardPaper {
     if (!c || c.points.length < 2) { this.cutting = null; this.dirty = true; return 0; }
     this.extendCutEnds();
     this.cutting = null;
+    // scissors that only went through the desk (never over paper) change nothing
+    const pts = c.points;
+    let touches = false;
+    for (let i = 1; i < pts.length && !touches; i++) {
+      const a = pts[i - 1], b = pts[i], n = Math.max(1, Math.ceil(Math.hypot(b.x - a.x, b.y - a.y) / 2));
+      for (let k = 0; k <= n && !touches; k++) touches = this.isOnPaper('inside', { x: a.x + ((b.x - a.x) * k) / n, y: a.y + ((b.y - a.y) * k) / n });
+    }
+    if (!touches) { this.dirty = true; return 0; }
     this.recordCut();
     const g = ctx2d(this.cut);
     g.save(); g.globalCompositeOperation = 'destination-out';

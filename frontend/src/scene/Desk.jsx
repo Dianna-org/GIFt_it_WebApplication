@@ -5,7 +5,7 @@ import { RoomEnvironment } from 'three/examples/jsm/environments/RoomEnvironment
 import { useStore } from '../store.js';
 import { cardDims, CANVAS_PX_W, TAPE_PATTERNS } from '../config.js';
 import { placeTextBox } from '../engine/paper.js';
-import { Card, canvasToWorld, cardMeshes, putCardDown } from './Card.jsx';
+import { Card, canvasToWorld, cardCutOnDesk, cardMeshes, putCardDown, tapeCutOnDesk } from './Card.jsx';
 import { movePointer, pointer } from './pointer.js';
 import {
   Brush, Crayon, Eraser, GlitterPen, Highlighter, HeldSticker, Marker, Pipette, Scissors, StickerSheet, TapeRoll, TextPad,
@@ -22,7 +22,7 @@ const qFromDir = (dir) => new THREE.Quaternion().setFromUnitVectors(Z, dir.clone
 const DEFS = [
   { id: 'crayon', tool: 'crayon', kind: 'pen', len: 1.95, home: [-11.2, 4.3], yaw: 0.04, r: 0.1, label: 'Crayon' },
   { id: 'marker', tool: 'marker', kind: 'pen', len: 1.98, home: [-11.2, 3.35], yaw: -0.03, r: 0.16, label: 'Marker' },
-  { id: 'highlighter', tool: 'highlighter', kind: 'pen', len: 2.0, home: [-11.2, 2.35], yaw: 0.03, r: 0.24, label: 'Highlighter' },
+  { id: 'highlighter', tool: 'highlighter', kind: 'pen', len: 2.0, width: 0.5, home: [-11.2, 2.35], yaw: 0.03, r: 0.24, label: 'Highlighter' },
   { id: 'brush', tool: 'brush', kind: 'pen', len: 2.9, home: [-11.25, 1.35], yaw: -0.02, r: 0.12, label: 'Paint brush' },
   { id: 'glitter', tool: 'glitter', kind: 'pen', len: 2.54, home: [-11.25, 0.35], yaw: 0.03, r: 0.14, label: 'Glitter gel pen' },
   { id: 'picker', tool: 'picker', kind: 'pen', len: 2.0, home: [-11.2, -0.65], yaw: -0.04, r: 0.14, label: 'Colour picker – take a colour from the card' },
@@ -30,7 +30,7 @@ const DEFS = [
     id: 'tape-' + p.id, tool: 'tape', variant: p.id, kind: 'roll', label: `Washi tape – ${p.label}`,
     home: [-7.0 + (i % 2) * 1.5, 4.0 - Math.floor(i / 2) * 1.45],
   })),
-  { id: 'scissors', tool: 'scissors', kind: 'scissors', len: 2.2, width: 0.9, home: [-11.3, -1.95], yaw: 0.05, r: 0.1, scale: 0.85, label: 'Scissors – cut tape, or cut the card' },
+  { id: 'scissors', tool: 'scissors', kind: 'scissors', len: 2.2, width: 1.2, home: [-11.3, -1.95], yaw: 0.05, r: 0.1, scale: 0.85, label: 'Scissors – cut tape, or cut the card' },
   { id: 'eraser', tool: 'eraser', kind: 'eraser', len: 1.0, width: 0.6, home: [-6.6, -0.6], yaw: 0.1, r: 0.15, label: 'Eraser – removes drawing only' },
   { id: 'sticker', tool: 'sticker', kind: 'sheet', home: [-10.0, -3.65], yaw: 1.5708, label: 'Stickers' },
   { id: 'text', tool: 'text', kind: 'pad', home: [-7.2, -3.0], yaw: -0.12, label: 'Text box' },
@@ -65,8 +65,11 @@ function toolFootprint(def, spot) {
     for (let t = 0; t <= def.len + 1e-6; t += 0.25) {
       for (const o of [-half, 0, half]) pts.push({ x: x + c * t - sn * o, y: y + sn * t + c * o });
     }
-  } else { // flat things: a rectangle (or the roll's circle) around the centre
-    const [hw, hh] = def.kind === 'roll' ? [0.55, 0.55] : def.kind === 'sheet' ? [0.71, 0.99] : [0.55, 0.78];
+  } else if (def.kind === 'roll') { // a round roll of tape
+    pts.push({ x, y });
+    for (const r of [0.3, 0.56]) for (let k = 0; k < 14; k++) pts.push({ x: x + Math.cos((k / 14) * Math.PI * 2) * r, y: y + Math.sin((k / 14) * Math.PI * 2) * r });
+  } else { // flat things: a rectangle around the centre
+    const [hw, hh] = def.kind === 'sheet' ? [0.71, 0.99] : [0.55, 0.78];
     for (let i = -2; i <= 2; i++) for (let j = -2; j <= 2; j++) {
       const lx = (i / 2) * hw, ly = (j / 2) * hh;
       pts.push({ x: x + c * lx - sn * ly, y: y + sn * lx + c * ly });
@@ -75,8 +78,30 @@ function toolFootprint(def, spot) {
   return { pts, centre: def.len ? { x: x + c * def.len / 2, y: y + sn * def.len / 2 } : { x, y } };
 }
 
-/** Part of the desk you can see and click (not under the bottom panel or off screen). */
-const onVisibleDesk = (p) => p.x > -11.9 && p.x < 6.2 && p.y < 4.7 && p.y > -2.4;
+/**
+ * Part of the desk you can see and click: inside the window and not under the panels or buttons
+ * (checked on screen, so it works for every window size).
+ */
+const view = { camera: null };
+let blockers = { t: 0, rects: [] };
+function screenBlockers() {
+  const now = performance.now();
+  if (now - blockers.t > 200) {
+    const els = document.querySelectorAll('.options, .topbar .btn, .topbar .logo, .menu-btn, .toast');
+    blockers = { t: now, rects: [...els].map((e) => e.getBoundingClientRect()).map((r) => ({ l: r.left - 6, r: r.right + 6, t: r.top - 6, b: r.bottom + 6 })) };
+  }
+  return blockers.rects;
+}
+const tmpV = new THREE.Vector3();
+function onVisibleDesk(p) {
+  const cam = view.camera;
+  if (!cam) return true;
+  tmpV.set(p.x, p.y, 0.1).project(cam);
+  const W = window.innerWidth, H = window.innerHeight;
+  const x = ((tmpV.x + 1) / 2) * W, y = ((1 - tmpV.y) / 2) * H;
+  if (x < 10 || y < 10 || x > W - 10 || y > H - 10) return false;
+  return !screenBlockers().some((r) => x > r.l && x < r.r && y > r.t && y < r.b);
+}
 
 function insideOrNear(p, poly, margin) {
   let inside = false;
@@ -107,6 +132,87 @@ function cardOutline() {
     }));
   }
   return out;
+}
+
+/** Footprints (with bounding boxes) of the tools lying on the desk, except the ones listed. */
+function lyingFootprints(s, exclude = [], spots = s.spots) {
+  const inHand = heldToolId(s), pendingRoll = s.paper.pendingTape ? 'tape-' + s.paper.pendingTape.pattern.id : null;
+  return DEFS.filter((d) => d.id !== inHand && d.id !== pendingRoll && !exclude.includes(d.id)).map((d) => {
+    const pts = toolFootprint(d, spots[d.id]).pts;
+    return { pts, box: boxOf(pts) };
+  });
+}
+function boxOf(pts) {
+  let x1 = Infinity, y1 = Infinity, x2 = -Infinity, y2 = -Infinity;
+  for (const p of pts) { x1 = Math.min(x1, p.x); y1 = Math.min(y1, p.y); x2 = Math.max(x2, p.x); y2 = Math.max(y2, p.y); }
+  return { x1, y1, x2, y2 };
+}
+function touchesAny(pts, others, gap) {
+  const b = boxOf(pts);
+  return others.some((o) => {
+    if (o.box.x1 > b.x2 + gap || o.box.x2 < b.x1 - gap || o.box.y1 > b.y2 + gap || o.box.y2 < b.y1 - gap) return false;
+    return pts.some((p) => o.pts.some((q) => Math.abs(p.x - q.x) < gap && Math.abs(p.y - q.y) < gap));
+  });
+}
+
+/** Why a tool can't lie at `spot` – 'offscreen', 'card' or 'tool' – or null when the place is free. */
+export function placeProblem(def, spot, s = useStore.getState(), gap = 0.5) {
+  const pts = toolFootprint(def, spot).pts;
+  if (!pts.every(onVisibleDesk)) return 'offscreen';
+  if (!s.cardHeld) {
+    const outline = cardOutline();
+    if (pts.some((p) => outline.some((poly) => insideOrNear(p, poly, 0.3)))) return 'card';
+  }
+  if (touchesAny(pts, lyingFootprints(s, [def.id]), gap)) return 'tool';
+  return null;
+}
+
+/** A resting place whose middle is at (cx, cy) – long tools are placed by their tip. */
+function spotAround(def, cx, cy, yaw) {
+  const a = (def.yaw || 0) + yaw;
+  const half = (def.len || 0) / 2;
+  return { x: cx - Math.cos(a) * half, y: cy - Math.sin(a) * half, yaw };
+}
+
+/** Nearest free place around (cx, cy) that also passes `accept`, searching outwards in rings. */
+function findFreeSpot(def, cx, cy, { accept = () => true, maxR = 6, yaws = [0], gap = 0.6 } = {}) {
+  const s = useStore.getState();
+  for (let r = 0; r <= maxR; r += 0.3) {
+    const n = r === 0 ? 1 : Math.max(8, Math.round((2 * Math.PI * r) / 0.4));
+    for (let k = 0; k < n; k++) {
+      const a = (k / n) * Math.PI * 2;
+      for (const yaw of yaws) {
+        const spot = spotAround(def, cx + Math.cos(a) * r, cy + Math.sin(a) * r, yaw);
+        if (accept(spot) && !placeProblem(def, spot, s, gap)) return spot;
+      }
+    }
+  }
+  return null;
+}
+
+/**
+ * "Put it back": the tool goes to its usual place. If another tool lies there, it goes to the nearest
+ * free place near it (left of the card), else to the mirrored place on the right of the card, else to
+ * any free place on the desk.
+ */
+export function putBackTool(id) {
+  const s = useStore.getState();
+  const def = DEFS.find((d) => d.id === id);
+  if (!def) { s.clearTool(); return; }
+  const atHome = placeProblem(def, undefined, s, 0.3);
+  if (!atHome || atHome === 'offscreen') { s.putBack(id); return; } // its usual place is free
+  const home = toolFootprint(def, undefined).centre;
+  const outline = cardOutline().flat();
+  const minX = Math.min(...outline.map((p) => p.x)), maxX = Math.max(...outline.map((p) => p.x));
+  const cardCx = (minX + maxX) / 2;
+  const side = (dir) => (spot) => toolFootprint(def, spot).pts.every((p) => (dir < 0 ? p.x < minX - 0.3 : p.x > maxX + 0.3));
+  const turns = [0, Math.PI / 2, -Math.PI / 2];
+  const spot = findFreeSpot(def, home.x, home.y, { accept: side(-1), maxR: 5, yaws: [0, 0.35, -0.35] })
+    || findFreeSpot(def, 2 * cardCx - home.x, home.y, { accept: side(1), maxR: 8, yaws: turns })
+    || findFreeSpot(def, home.x, home.y, { maxR: 18, yaws: turns, gap: 0.45 });
+  if (!spot) { s.putBack(id); return; }
+  s.putBack(id);
+  useStore.setState({ spots: { ...useStore.getState().spots, [id]: spot } });
 }
 
 /**
@@ -143,8 +249,8 @@ function KeepToolsVisible() {
       const fp = toolFootprint(def, spot);
       if (!covered(fp.pts)) continue;
       // ...and it should not land on another tool either
-      const others = lying.filter((d) => d !== def).map((d) => toolFootprint(d, (spots || s.spots)[d.id]).pts).flat();
-      const bumps = (pts) => pts.some((p) => others.some((q) => Math.abs(p.x - q.x) < 0.4 && Math.abs(p.y - q.y) < 0.4));
+      const others = lying.filter((d) => d !== def).map((d) => { const pts = toolFootprint(d, (spots || s.spots)[d.id]).pts; return { pts, box: boxOf(pts) }; });
+      const bumps = (pts) => touchesAny(pts, others, 0.6);
       // find the nearest free, visible place, preferring the direction away from the card's middle
       let ax = fp.centre.x - cardCentre.x, ay = fp.centre.y - cardCentre.y;
       const l = Math.hypot(ax, ay);
@@ -156,7 +262,6 @@ function KeepToolsVisible() {
           const moved = { ...base, x: base.x + Math.cos(a) * step, y: base.y + Math.sin(a) * step };
           const pts = toolFootprint(def, moved).pts;
           if (!pts.every(onVisibleDesk) || covered(pts) || bumps(pts)) continue;
-          moved.pushed = performance.now(); // tells the tool to roll / slide there instead of jumping
           spots = spots || { ...s.spots };
           spots[def.id] = moved;
           break search;
@@ -198,12 +303,15 @@ function ToolItem({ def }) {
   const lastPush = useRef(0);
   useEffect(() => {
     const g = ref.current;
-    if (!g || !spot?.pushed || spot.pushed === lastPush.current) return;
-    lastPush.current = spot.pushed;
+    if (!g || lastPush.current === rest) return;
+    const first = lastPush.current === 0;
+    lastPush.current = rest;
+    if (first || held) return;
     const from = g.position.clone(), to = rest.pos.clone();
     const d = to.clone().sub(from);
     const dist = Math.hypot(d.x, d.y);
-    const yaw = (def.yaw || 0) + spot.yaw;
+    if (dist < 0.05) return;
+    const yaw = (def.yaw || 0) + (spot?.yaw || 0);
     const rolls = def.kind === 'pen'; // pens, crayons, the brush and the pipette are round
     // rolling without slipping: only the movement across the pen turns it (along it, it slides)
     const across = d.x * -Math.sin(yaw) + d.y * Math.cos(yaw);
@@ -215,7 +323,7 @@ function ToolItem({ def }) {
       spin: def.kind === 'roll' ? (Math.random() < 0.5 ? -1 : 1) * dist * 0.35 : 0, // a flat roll twirls a little as it slides
       quatFrom: g.quaternion.clone(),
     };
-  }, [spot, rest, def]);
+  }, [rest, def, held]);
   const tmpPos = useRef(new THREE.Vector3()).current;
   const tmpQuat = useRef(new THREE.Quaternion()).current;
   const dir = useRef(new THREE.Vector3()).current;
@@ -379,6 +487,7 @@ function Rig() {
   const three = useThree();
   const { camera, size } = three;
   useFrame((st) => {
+    view.camera = st.camera;
     if (import.meta.env.DEV) window.__three = st;
     const aspect = size.width / size.height;
     const fov = THREE.MathUtils.degToRad(camera.fov);
@@ -470,11 +579,13 @@ function Studio() {
 function DeskPlane() {
   return (
     <mesh position={[0, 0, 0]} receiveShadow
-      onPointerMove={(e) => { movePointer(e.point); pointer.onCard = false; }}
+      onPointerMove={(e) => { movePointer(e.point); pointer.onCard = false; tapeCutOnDesk('move', e.ray); cardCutOnDesk('move', e.ray); }}
       onPointerDown={(e) => {
         if (e.button !== 0) return;
         pointer.down = true;
         movePointer(e.point);
+        tapeCutOnDesk('down', e.ray); // scissors may start a tape cut on the desk, beside the card
+        cardCutOnDesk('down', e.ray); // ...or start trimming the card from outside its edge
         const s = useStore.getState();
         if (!s.tool && s.cardHeld) putCardDown();
         // a click on the desk with a tool in hand leaves the tool there (decided on release, so dragging in to cut still works)
@@ -495,7 +606,20 @@ function useDropOnDesk() {
       if (Math.hypot(e.clientX - press.x, e.clientY - press.y) > 6) return;
       const s = useStore.getState();
       const id = heldToolId(s);
-      if (id) s.dropTool(id, press.point.x, press.point.y);
+      const def = DEFS.find((d) => d.id === id);
+      if (!def) return;
+      const spot = { x: press.point.x, y: press.point.y, yaw: (Math.random() - 0.5) * 0.6 };
+      const problem = placeProblem(def, spot, s);
+      if (problem) {
+        // the tool stays in the hand until an empty spot is clicked
+        s.showToast({
+          tool: 'Oops! This place is occupied by another tool. Please put it down in an empty spot :)',
+          card: 'Oops! The tool would lie on the card there. Please put it down in an empty spot :)',
+          offscreen: 'Oops! That spot is too close to the edge. Please put it down in an empty spot :)',
+        }[problem], 'error');
+        return;
+      }
+      s.dropTool(id, spot.x, spot.y, spot.yaw);
     };
     window.addEventListener('pointerup', up);
     return () => window.removeEventListener('pointerup', up);

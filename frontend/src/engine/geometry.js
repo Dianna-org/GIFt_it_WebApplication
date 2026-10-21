@@ -15,7 +15,7 @@ export function lineIntersection(p, r, q, s) {
  * The cut must cross both long edges of the strip, otherwise there is no piece (returns null).
  * Returns the polygon of the piece that stays on the card (the part nearest to S).
  */
-export function cutTapeStrip(S, E, width, A, B) {
+export function cutTapeStrip(S, E, width, A, B, { mustSpan = true } = {}) {
   const dx = E.x - S.x, dy = E.y - S.y;
   const len = Math.hypot(dx, dy);
   if (len < 4) return null;
@@ -30,8 +30,9 @@ export function cutTapeStrip(S, E, width, A, B) {
   if (!i1 || !i2) return null;
   // The cut must hit both edges within the strip length.
   if (i1.t <= 0.02 || i1.t > 1 || i2.t <= 0.02 || i2.t > 1) return null;
-  // ...and the dragged cut line itself must reach both edges (u is the position along A->B).
-  if (i1.u < 0 || i1.u > 1 || i2.u < 0 || i2.u > 1) return null;
+  // ...and the dragged cut line itself must reach both edges (u is the position along A->B),
+  // unless the caller already knows the snip went into the tape (then the line is simply extended).
+  if (mustSpan && (i1.u < 0 || i1.u > 1 || i2.u < 0 || i2.u > 1)) return null;
   return [top, { x: i1.x, y: i1.y }, { x: i2.x, y: i2.y }, bot];
 }
 

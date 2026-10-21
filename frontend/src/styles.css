@@ -140,3 +140,4 @@ textarea, select, .text, .form input { width: 100%; font: inherit; padding: 8px 
 .modal.confirm p { font-size: 16px; line-height: 1.45; margin: 4px 0 16px; }
 .row.end { justify-content: flex-end; }
 .btn.danger-solid { background: var(--danger); color: #fff; border-color: transparent; }
+.head-actions { display: inline-flex; gap: 10px; align-items: center; }

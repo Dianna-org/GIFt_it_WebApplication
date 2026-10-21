@@ -3,8 +3,8 @@ import { useFrame } from '@react-three/fiber';
 import * as THREE from 'three';
 import { useStore } from '../store.js';
 import { cardDims, DRAW_TOOLS } from '../config.js';
-import { cutTapeStrip } from '../engine/geometry.js';
-import { tapePatternById } from '../engine/paper.js';
+import { cutTapeStrip, pointInPolygon } from '../engine/geometry.js';
+import { tapePatternById, tapePolygon } from '../engine/paper.js';
 import { containsProfanity } from '../moderation.js';
 import { movePointer, pointer } from './pointer.js';
 import { paperBumpTexture } from './textures.js';
@@ -42,6 +42,70 @@ export function canvasToWorld(face, x, y) {
   return mesh.localToWorld(new THREE.Vector3((uvx - 0.5) * width, (0.5 - y / paper.h) * height, 0.01));
 }
 
+/**
+ * A point on the desk (from a pointer ray) in canvas pixels of a face, measured in the plane of the
+ * half of the card that holds the pulled-out tape. Points off the card give coordinates outside the
+ * canvas – that is fine for cutting tape: the scissors may start and finish on the desk.
+ */
+function rayToCanvas(face, sx, ray) {
+  const paper = st().paper;
+  const half = face === 'inside' ? (sx < paper.w / 2 ? 'left' : 'right') : sx >= paper.w / 2 ? 'left' : 'right';
+  const mesh = cardMeshes[`${face}-${half}`];
+  if (!mesh) return null;
+  const n = new THREE.Vector3(0, 0, 1).applyQuaternion(mesh.getWorldQuaternion(new THREE.Quaternion()));
+  const plane = new THREE.Plane().setFromNormalAndCoplanarPoint(n, mesh.getWorldPosition(new THREE.Vector3()));
+  const hit = ray.intersectPlane(plane, new THREE.Vector3());
+  if (!hit) return null;
+  const local = mesh.worldToLocal(hit);
+  const { width, height } = mesh.geometry.parameters;
+  const offset = (face === 'inside') === (half === 'left') ? 0 : 0.5;
+  return { x: (offset + (local.x / width + 0.5) * 0.5) * paper.w, y: (0.5 - local.y / height) * paper.h };
+}
+
+/**
+ * Cutting the card's edges: the scissors' path over the desk is kept too, so a cut that leaves the
+ * card and comes back follows the hand instead of jumping straight across.
+ */
+let deskRays = [];
+export function cardCutOnDesk(kind, ray) {
+  const s = st(), paper = s.paper;
+  if (s.tool !== 'scissors' || paper.pendingTape || paper.choice) return;
+  if (kind === 'down') { deskRays = [ray.clone()]; return; }
+  if (!pointer.down) return;
+  const c = paper.cutting;
+  if (c?.anchor) {
+    const p = rayToCanvas(c.anchor.face, c.anchor.x, ray);
+    if (p) paper.addCutPoint(c.anchor.face, p);
+  } else if (deskRays.length < 500) deskRays.push(ray.clone());
+}
+/** Starts a card cut at a point on a face, adding the path already drawn over the desk in front of it. */
+function startCardCut(face, pt) {
+  const paper = st().paper;
+  const before = pointer.down ? deskRays.map((r) => rayToCanvas(face, pt.x, r)).filter(Boolean) : [];
+  deskRays = [];
+  paper.beginCut(face, before[0] || pt);
+  for (const p of before.slice(1)) paper.addCutPoint(face, p);
+  paper.addCutPoint(face, pt);
+  paper.cutting.anchor = { face, x: pt.x };
+  pointer.drawing = true;
+}
+
+/** Cutting pulled-out tape with the scissors from the desk (outside the card). */
+export function tapeCutOnDesk(kind, ray) {
+  const s = st(), paper = s.paper, pt = paper.pendingTape;
+  if (s.tool !== 'scissors' || !pt) return false;
+  const p = rayToCanvas(pt.face, pt.S.x, ray);
+  if (!p) return false;
+  if (kind === 'down') {
+    pointer.cutStart = p;
+    paper.setGhost({ kind: 'tapecut', face: pt.face, A: p, B: p });
+    pointer.drawing = true;
+  } else if (kind === 'move' && pointer.drawing && paper.ghost?.kind === 'tapecut') {
+    paper.setGhost({ ...paper.ghost, B: p });
+  }
+  return true;
+}
+
 // ---------------------------------------------------------------- tool handling
 function finishTapeCut() {
   const s = st(), paper = s.paper;
@@ -49,9 +113,16 @@ function finishTapeCut() {
   paper.setGhost(null);
   const pt = paper.pendingTape;
   if (!g || !pt || Math.hypot(g.B.x - g.A.x, g.B.y - g.A.y) < 12) return;
-  const poly = cutTapeStrip(pt.S, pt.E, pt.width, g.A, g.B);
+  // a snip that never touched the tape (only the desk) simply does nothing
+  const strip = tapePolygon(pt.S, pt.E, pt.width);
+  const touched = Array.from({ length: 81 }, (_, i) => ({ x: g.A.x + ((g.B.x - g.A.x) * i) / 80, y: g.A.y + ((g.B.y - g.A.y) * i) / 80 }))
+    .some((q) => pointInPolygon(q, strip));
   pointer.snipUntil = performance.now() + 700;
-  if (!poly) { s.showToast('The cut has to go all the way across the tape.', 'error'); return; }
+  if (!touched) return;
+  // a snip into the tape cuts it straight across along that line, even if it stopped short of the far side
+  // (tape lying at the very edge of the card can always be cut)
+  const poly = cutTapeStrip(pt.S, pt.E, pt.width, g.A, g.B) || cutTapeStrip(pt.S, pt.E, pt.width, g.A, g.B, { mustSpan: false });
+  if (!poly) { s.showToast('Cut across the tape, not along it.', 'error'); return; }
   paper.placeTape(pt.face, poly, pt.S, Math.atan2(pt.E.y - pt.S.y, pt.E.x - pt.S.x), pt.pattern);
   s.markDirty();
   useStore.setState({ tool: 'tape' }); // the scissors go back, the roll goes back
@@ -61,7 +132,7 @@ function handleDown(face, pt) {
   const s = st(), paper = s.paper, tool = s.tool;
   if (paper.choice) { if (paper.chooseCutPiece(paper.pieceAt(face, pt))) s.markDirty(); return; }
   if (!tool) return;
-  if (tool === 'scissors' && !paper.pendingTape) { paper.beginCut(face, pt); pointer.drawing = true; return; }
+  if (tool === 'scissors' && !paper.pendingTape) { deskRays = []; startCardCut(face, pt); return; }
   if (!paper.isOnPaper(face, pt)) return;
   if (DRAW_TOOLS[tool] || tool === 'eraser') {
     const t = s.toolSettings[tool];
@@ -97,7 +168,7 @@ function handleMove(face, pt) {
   if (!tool) return;
   if (tool === 'scissors' && !paper.pendingTape) {
     if (paper.cutting) paper.addCutPoint(face, pt);
-    else if (pointer.down) { paper.beginCut(face, pt); pointer.drawing = true; } // came in from the desk
+    else if (pointer.down) startCardCut(face, pt); // came in from the desk
     return;
   }
   const on = paper.isOnPaper(face, pt);
