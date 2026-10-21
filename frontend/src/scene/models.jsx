@@ -254,10 +254,10 @@ export function TapeRoll({ pattern, spinRef }) {
         <cylinderGeometry args={[0.26, 0.26, 0.355, 48, 1, true]} />
         <meshStandardMaterial map={core} roughness={0.9} side={THREE.BackSide} />
       </mesh>
-      {/* invisible disc so the hole can be clicked too */}
-      <mesh rotation={[PI2, 0, 0]}>
-        <circleGeometry args={[0.55, 24]} />
-        <meshBasicMaterial transparent opacity={0} depthWrite={false} />
+      {/* invisible solid cylinder around the whole roll, so the hole can be clicked too */}
+      <mesh>
+        <cylinderGeometry args={[0.57, 0.57, 0.38, 24]} />
+        <meshBasicMaterial colorWrite={false} depthWrite={false} transparent opacity={0} />
       </mesh>
     </group></group>
   );

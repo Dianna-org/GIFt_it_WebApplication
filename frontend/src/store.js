@@ -12,6 +12,8 @@ const write = (key, value) => {
 const saved = read('cardstudio.session', null);
 export const MY_COLOR_SLOTS = 12;
 export const ZOOM_MAX = 8;
+export const ZOOM_ANIM_MS = 750;
+let zoomTimer = 0;
 const emptyPalette = () => Array(MY_COLOR_SLOTS).fill(null);
 /** A saved design's palette, always MY_COLOR_SLOTS long. */
 export function normalizePalette(list) {
@@ -48,6 +50,7 @@ export const useStore = create((set, get) => ({
   bg: DEFAULT_BG,
   // Zoom on the card: 0 = normal view; otherwise the screen splits (tools left, magnified card right).
   zoom: 0,
+  zoomClosing: false, // "Zoom out" was pressed: the split view is animating away
   zoomOffset: { x: 0, y: 0 }, // where the zoomed view looks, relative to the card's middle (world units)
   designId: null,
   title: '',
@@ -153,9 +156,20 @@ export const useStore = create((set, get) => ({
     cardHeld: s.cardHeld || axis !== 'v',
   })),
   setCardHeld: (cardHeld) => set({ cardHeld }),
-  zoomIn: () => set((s) => (s.zoom ? { zoom: Math.min(ZOOM_MAX, +(s.zoom * 1.5).toFixed(2)) } : { zoom: 2, zoomOffset: { x: 0, y: 0 } })),
+  zoomIn: () => {
+    clearTimeout(zoomTimer);
+    set((s) => (s.zoom && !s.zoomClosing
+      ? { zoom: Math.min(ZOOM_MAX, +(s.zoom * 1.5).toFixed(2)) }
+      : { zoom: s.zoomClosing ? s.zoom : 2, zoomClosing: false, zoomOffset: s.zoomClosing ? s.zoomOffset : { x: 0, y: 0 } }));
+  },
   setZoom: (zoom) => set({ zoom: Math.max(1, Math.min(ZOOM_MAX, zoom)) }),
-  zoomOut: () => set({ zoom: 0, zoomOffset: { x: 0, y: 0 } }),
+  /** Back to the normal view – after the split view has animated away. */
+  zoomOut: () => {
+    if (!get().zoom || get().zoomClosing) return;
+    set({ zoomClosing: true });
+    clearTimeout(zoomTimer);
+    zoomTimer = setTimeout(() => set({ zoom: 0, zoomClosing: false, zoomOffset: { x: 0, y: 0 } }), ZOOM_ANIM_MS + 30);
+  },
   setZoomOffset: (zoomOffset) => set({ zoomOffset }),
   /** Back to how the card started: flat, not turned, sheet face-up (open stays open, closed shows the front cover). */
   resetCard: () => set((s) => {

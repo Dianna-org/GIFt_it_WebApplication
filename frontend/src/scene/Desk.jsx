@@ -2,10 +2,10 @@ import { useEffect, useMemo, useRef, useState } from 'react';
 import { Canvas, events as pointerEvents, useFrame, useThree } from '@react-three/fiber';
 import * as THREE from 'three';
 import { RoomEnvironment } from 'three/examples/jsm/environments/RoomEnvironment.js';
-import { useStore } from '../store.js';
+import { useStore, ZOOM_ANIM_MS } from '../store.js';
 import { cardDims, CANVAS_PX_W, TAPE_PATTERNS } from '../config.js';
 import { placeTextBox } from '../engine/paper.js';
-import { Card, canvasToWorld, cardCutOnDesk, cardMeshes, putCardDown, tapeCutOnDesk } from './Card.jsx';
+import { Card, canvasToWorld, cardCutOnDesk, cardIsOpen, cardMeshes, putCardDown, tapeCutOnDesk } from './Card.jsx';
 import { movePointer, pointer } from './pointer.js';
 import { aimCamera, hitCardPlane, offsetOf, SPLIT, zoomView } from './zoom.js';
 import {
@@ -43,6 +43,17 @@ export function heldToolId(s) {
   if (!s.tool) return null;
   if (s.tool === 'tape') return 'tape-' + s.tapePattern;
   return s.tool;
+}
+
+/**
+ * A tool held `lift` above the desk at point p, placed on the line from the eye to p so that on
+ * screen it sits exactly under the cursor (lifting straight up would make it look higher up the desk
+ * than where it really is – and where it would be put down).
+ */
+function underCursor(out, p, lift, eye) {
+  const dz = eye.z - p.z;
+  const t = dz > 1e-3 ? Math.min(0.9, lift / dz) : 0;
+  return out.set(p.x + (eye.x - p.x) * t, p.y + (eye.y - p.y) * t, p.z + (eye.z - p.z) * t);
 }
 
 function restPose(def, spot) {
@@ -157,12 +168,12 @@ function touchesAny(pts, others, gap) {
 }
 
 /** Why a tool can't lie at `spot` – 'offscreen', 'card' or 'tool' – or null when the place is free. */
-export function placeProblem(def, spot, s = useStore.getState(), gap = 0.5) {
+export function placeProblem(def, spot, s = useStore.getState(), gap = 0.22) {
   const pts = toolFootprint(def, spot).pts;
   if (!pts.every(onVisibleDesk)) return 'offscreen';
   if (!s.cardHeld) {
     const outline = cardOutline();
-    if (pts.some((p) => outline.some((poly) => insideOrNear(p, poly, 0.3)))) return 'card';
+    if (pts.some((p) => outline.some((poly) => insideOrNear(p, poly, 0.12)))) return 'card';
   }
   if (touchesAny(pts, lyingFootprints(s, [def.id]), gap)) return 'tool';
   return null;
@@ -176,7 +187,7 @@ function spotAround(def, cx, cy, yaw) {
 }
 
 /** Nearest free place around (cx, cy) that also passes `accept`, searching outwards in rings. */
-function findFreeSpot(def, cx, cy, { accept = () => true, maxR = 6, yaws = [0], gap = 0.6 } = {}) {
+function findFreeSpot(def, cx, cy, { accept = () => true, maxR = 6, yaws = [0], gap = 0.35 } = {}) {
   const s = useStore.getState();
   for (let r = 0; r <= maxR; r += 0.3) {
     const n = r === 0 ? 1 : Math.max(8, Math.round((2 * Math.PI * r) / 0.4));
@@ -210,7 +221,7 @@ export function putBackTool(id) {
   const turns = [0, Math.PI / 2, -Math.PI / 2];
   const spot = findFreeSpot(def, home.x, home.y, { accept: side(-1), maxR: 5, yaws: [0, 0.35, -0.35] })
     || findFreeSpot(def, 2 * cardCx - home.x, home.y, { accept: side(1), maxR: 8, yaws: turns })
-    || findFreeSpot(def, home.x, home.y, { maxR: 18, yaws: turns, gap: 0.45 });
+    || findFreeSpot(def, home.x, home.y, { maxR: 18, yaws: turns, gap: 0.25 });
   if (!spot) { s.putBack(id); return; }
   s.putBack(id);
   useStore.setState({ spots: { ...useStore.getState().spots, [id]: spot } });
@@ -251,7 +262,7 @@ function KeepToolsVisible() {
       if (!covered(fp.pts)) continue;
       // ...and it should not land on another tool either
       const others = lying.filter((d) => d !== def).map((d) => { const pts = toolFootprint(d, (spots || s.spots)[d.id]).pts; return { pts, box: boxOf(pts) }; });
-      const bumps = (pts) => touchesAny(pts, others, 0.6);
+      const bumps = (pts) => touchesAny(pts, others, 0.35);
       // find the nearest free, visible place, preferring the direction away from the card's middle
       let ax = fp.centre.x - cardCentre.x, ay = fp.centre.y - cardCentre.y;
       const l = Math.hypot(ax, ay);
@@ -362,7 +373,7 @@ function ToolItem({ def }) {
       if (hover) tmpPos.z += 0.08;
     } else if (def.kind === 'pen' || def.kind === 'scissors' || def.kind === 'eraser') {
       const lift = pointer.drawing ? 0.02 : pointer.onCard ? 0.4 : 0.7;
-      tmpPos.set(p.x, p.y, p.z + lift);
+      underCursor(tmpPos, p, lift, state.raycaster.ray.origin);
       const sway = THREE.MathUtils.clamp(pointer.vel.x * 2.2, -0.3, 0.3);
       if (def.kind === 'eraser') dir.set(0.15 + sway * 0.5, -0.3, 0.94);
       else dir.set(0.38 + sway, -0.5 + THREE.MathUtils.clamp(pointer.vel.y * 1.5, -0.2, 0.2), 0.78);
@@ -376,7 +387,7 @@ function ToolItem({ def }) {
         tmpPos.copy(pointer.tapeEnd).addScaledVector(Z, 0.55);
         tmpQuat.copy(qFromDir(new THREE.Vector3(-pointer.tapeDir.y, pointer.tapeDir.x, 0)));
       } else {
-        tmpPos.set(p.x, p.y, p.z + (pointer.pulling ? 0.55 : 0.8));
+        underCursor(tmpPos, p, pointer.pulling ? 0.55 : 0.8, state.raycaster.ray.origin);
         let ax = new THREE.Vector3(0, 1, 0);
         if (pt && pointer.pulling) {
           const a = canvasToWorld(pt.face, pt.S.x, pt.S.y), b = canvasToWorld(pt.face, pt.E.x, pt.E.y);
@@ -395,7 +406,8 @@ function ToolItem({ def }) {
         const k2 = cardDims(s.cardSize).worldW / CANVAS_PX_W;
         ox = (box.w / 2) * k2 + 0.75; oy = -(box.h / 2) * k2 - 0.35;
       }
-      tmpPos.set(p.x + ox, p.y + oy, p.z + 1.0);
+      underCursor(tmpPos, p, 1.0, state.raycaster.ray.origin);
+      tmpPos.x += ox; tmpPos.y += oy;
       tmpQuat.setFromEuler(new THREE.Euler(-0.45, 0.1, -0.2));
       k = Math.max(k, 1 - Math.exp(-dt * 30));
     }
@@ -470,7 +482,7 @@ function PeeledSticker() {
     const scale = s.stickerSize * (cardDims(s.cardSize).worldW / CANVAS_PX_W);
     const pop = Math.max(0, 1 - (performance.now() - pointer.placedAt) / 250);
     const p = pointer.world;
-    g.position.lerp(new THREE.Vector3(p.x, p.y, p.z + (pointer.onCard ? 0.2 + pop * 0.25 : 0.6)), k);
+    g.position.lerp(underCursor(new THREE.Vector3(), p, pointer.onCard ? 0.2 + pop * 0.25 : 0.6, state.raycaster.ray.origin), k);
     g.scale.lerp(new THREE.Vector3(scale, scale, 1), k);
     const sheet = s.spots.sticker || { x: -10.0, y: -3.65 };
     const curl = (1 - Math.min(1, g.position.distanceTo(new THREE.Vector3(sheet.x, sheet.y, 0)) / 3)) * 0.9;
@@ -586,63 +598,144 @@ function measureCard(mainCam) {
   return true;
 }
 
-/** Draws the normal view, or – while zoomed – the split view and the zoom map. */
+const ease = (t) => (t < 0.5 ? 4 * t * t * t : 1 - Math.pow(-2 * t + 2, 3) / 2);
+const MAP_W = 216;
+const cardHit = new THREE.Raycaster();
+
+/** Which card surface is in front of the zoomed view: tries the middle, then a few other points. */
+function visibleSurface(cam) {
+  const meshes = Object.values(cardMeshes).filter(Boolean);
+  for (const [x, y] of [[0, 0], [-0.4, 0], [0.4, 0], [0, -0.4], [0, 0.4], [-0.7, 0.7], [0.7, -0.7]]) {
+    ndc.set(x, y);
+    cardHit.setFromCamera(ndc, cam);
+    const hit = cardHit.intersectObjects(meshes, false)[0];
+    if (hit) return Object.keys(cardMeshes).find((k) => cardMeshes[k] === hit.object);
+  }
+  return null;
+}
+
+/** Canvas pixels (of the mesh's face) for a world point, measured in that half of the card. */
+function meshToCanvas(key, world, paper) {
+  const m = cardMeshes[key];
+  const local = m.worldToLocal(world.clone());
+  const { width, height } = m.geometry.parameters;
+  const offset = key === 'inside-left' || key === 'outside-right' ? 0 : 0.5;
+  return { x: (offset + (local.x / width + 0.5) * 0.5) * paper.w, y: (0.5 - local.y / height) * paper.h };
+}
+
+/** Paints the zoom map: the side of the card you look at, with everything on it, and the red frame. */
+function drawZoomMap(canvasEl, cam, s) {
+  const key = visibleSurface(cam) || zoomView.mapKey;
+  if (!key) return;
+  zoomView.mapKey = key;
+  const paper = s.paper;
+  const face = key.startsWith('inside') ? 'inside' : 'outside';
+  const leftHalfOfCanvas = key === 'inside-left' || key === 'outside-right';
+  const open = cardIsOpen(s.halves);
+  const srcX = open ? 0 : leftHalfOfCanvas ? 0 : paper.w / 2;
+  const srcW = open ? paper.w : paper.w / 2;
+  // the card with a margin of desk around it, so the red frame always fits on the map
+  const pad = 0.14;
+  const mw = MAP_W, mh = Math.round((MAP_W * paper.h * (1 + 2 * pad)) / (srcW * (1 + 2 * pad)));
+  if (canvasEl.width !== mw || canvasEl.height !== mh) { canvasEl.width = mw; canvasEl.height = mh; canvasEl.style.height = mh + 'px'; }
+  const ix = (mw * pad) / (1 + 2 * pad), iy = (mh * pad) / (1 + 2 * pad);
+  const iw = mw - 2 * ix, ih = mh - 2 * iy; // where the card sits on the map
+  zoomView.map = { face, srcX, srcW, srcH: paper.h, ix, iy, iw, ih };
+  const g = canvasEl.getContext('2d');
+  g.fillStyle = s.bg || '#fde9a0'; g.fillRect(0, 0, mw, mh); // the desk around the card
+  g.save(); g.shadowColor = 'rgba(60,40,0,.35)'; g.shadowBlur = 6; g.shadowOffsetY = 2;
+  g.fillStyle = '#cdbf9a'; g.fillRect(ix, iy, iw, ih); g.restore(); // shows through holes cut in the card
+  g.drawImage(paper.faces[face].compose, srcX, 0, srcW, paper.h, ix, iy, iw, ih);
+  // the part of the card in the zoomed view
+  const plane = new THREE.Plane().setFromNormalAndCoplanarPoint(
+    new THREE.Vector3(0, 0, 1).applyQuaternion(cardMeshes[key].getWorldQuaternion(new THREE.Quaternion())),
+    cardMeshes[key].getWorldPosition(new THREE.Vector3()));
+  const pts = [[-1, -1], [1, -1], [1, 1], [-1, 1]].map(([x, y]) => {
+    ndc.set(x, y);
+    cardHit.setFromCamera(ndc, cam);
+    const w = cardHit.ray.intersectPlane(plane, new THREE.Vector3());
+    if (!w) return null;
+    const c = meshToCanvas(key, w, paper);
+    return { x: ix + ((c.x - srcX) / srcW) * iw, y: iy + (c.y / paper.h) * ih };
+  });
+  if (pts.every(Boolean)) {
+    g.save();
+    g.beginPath(); g.rect(0, 0, mw, mh);
+    pts.forEach((p, i) => (i ? g.lineTo(p.x, p.y) : g.moveTo(p.x, p.y))); g.closePath();
+    g.fillStyle = 'rgba(40, 30, 10, 0.3)'; g.fill('evenodd'); // dim what is not in view
+    g.beginPath(); g.rect(1.5, 1.5, mw - 3, mh - 3); g.clip(); // keep the frame inside the map
+    g.beginPath(); pts.forEach((p, i) => (i ? g.lineTo(p.x, p.y) : g.moveTo(p.x, p.y))); g.closePath();
+    g.lineWidth = 2.5; g.strokeStyle = '#e63946'; g.lineJoin = 'round'; g.stroke();
+    g.restore();
+  }
+  const label = document.querySelector('.zoom-map-side');
+  if (label) label.textContent = open ? (face === 'inside' ? '– inside' : '– outside') : face === 'outside' ? '– cover' : '– inside page';
+}
+
+/**
+ * Draws the normal view, or the split view while zoomed. Zooming in plays an animation: the right
+ * side slides in from the edge of the screen while its camera flies from the normal view into the
+ * card; zooming out plays it backwards.
+ */
 function SplitRenderer() {
+  const anim = useRef({ value: 0, from: 0, to: 0, t0: 0, want: false, zoom: 2, offset: { x: 0, y: 0 } });
   useFrame((state) => {
-    const { gl, scene, camera, size } = state;
+    const { gl, scene, camera, size, invalidate } = state;
     const s = useStore.getState();
-    const z = zoomView;
-    const W = size.width, H = size.height;
+    const z = zoomView, a = anim.current;
+    const W = size.width, H = size.height, now = performance.now();
+    const want = s.zoom > 0 && !s.zoomClosing;
+    if (want !== a.want) { a.want = want; a.from = a.value; a.to = want ? 1 : 0; a.t0 = now; }
+    const t = Math.min(1, (now - a.t0) / ZOOM_ANIM_MS);
+    a.value = a.from + (a.to - a.from) * ease(t);
+    if (t < 1) invalidate();
+    if (s.zoom) { a.zoom = s.zoom; a.offset = s.zoomOffset; }
+
     gl.autoClear = false;
     gl.setScissorTest(false);
     gl.setViewport(0, 0, W, H);
     gl.clear();
-    z.active = s.zoom > 0 && measureCard(camera);
-    if (!z.active) { gl.render(scene, camera); return; }
+    const area = document.querySelector('.zoom-area'), map = document.querySelector('.zoom-map');
+    z.active = a.value > 0.001 && measureCard(camera);
+    if (!z.active) {
+      gl.render(scene, camera);
+      if (area) area.style.left = W + 'px';
+      return;
+    }
 
-    const sx = Math.round(W * SPLIT);
+    const e = a.value;
+    const sx = Math.round(W - (W - W * SPLIT) * e); // the divider slides in from the right edge
     z.splitPx = sx;
+    if (area) area.style.left = sx + 'px';
+    if (map) map.style.opacity = String(Math.max(0, (e - 0.55) / 0.45));
     gl.setScissorTest(true);
     // left: exactly the normal picture of the desk, just cropped
     gl.setScissor(0, 0, sx, H);
     gl.render(scene, camera);
     const autoShadows = gl.shadowMap.autoUpdate;
     gl.shadowMap.autoUpdate = false; // shadows were already worked out for this frame
-    // right: the magnified card
-    const used = aimCamera(z.camera, camera, (W - sx) / H, s.zoom, s.zoomOffset);
-    gl.setViewport(sx, 0, W - sx, H);
-    gl.setScissor(sx, 0, W - sx, H);
-    gl.clear();
-    gl.render(scene, z.camera);
-    // the zoom map
-    const box = document.querySelector('.zoom-map-view');
-    const poly = document.querySelector('.zoom-map-rect');
-    if (box) {
-      const r = box.getBoundingClientRect(), c = gl.domElement.getBoundingClientRect();
-      const x = r.left - c.left, y = r.top - c.top;
-      aimCamera(z.mapCamera, camera, r.width / r.height, 1, { x: 0, y: 0 });
-      gl.setViewport(x, H - y - r.height, r.width, r.height);
-      gl.setScissor(x, H - y - r.height, r.width, r.height);
+    // right: the magnified card – on the way in, the camera flies from the normal view to it
+    const used = aimCamera(z.camera, camera, Math.max(0.1, (W - sx) / H), a.zoom, a.offset);
+    if (e < 0.999) {
+      const from = camera.position, to = z.camera.position.clone();
+      const look0 = camera.position.clone().add(camera.getWorldDirection(new THREE.Vector3()).multiplyScalar(camera.position.z / Math.max(0.2, -camera.getWorldDirection(new THREE.Vector3()).z)));
+      z.camera.position.lerpVectors(from, to, e);
+      z.camera.lookAt(look0.lerp(used.target, e));
+      z.camera.updateMatrixWorld();
+    }
+    if (W - sx > 1) {
+      gl.setViewport(sx, 0, W - sx, H);
+      gl.setScissor(sx, 0, W - sx, H);
       gl.clear();
-      gl.render(scene, z.mapCamera);
-      // red outline: the part of the card the zoomed view shows
-      if (poly) {
-        const corners = [[-1, -1], [1, -1], [1, 1], [-1, 1]].map(([ax, ay]) => {
-          ndc.set(ax, ay);
-          ray.setFromCamera(ndc, z.camera);
-          const hit = hitCardPlane(ray.ray);
-          if (!hit) return null;
-          hit.project(z.mapCamera);
-          return `${((hit.x + 1) / 2) * r.width},${((1 - hit.y) / 2) * r.height}`;
-        });
-        poly.setAttribute('points', corners.every(Boolean) ? corners.join(' ') : '');
-      }
+      gl.render(scene, z.camera);
     }
     gl.shadowMap.autoUpdate = autoShadows;
     gl.setScissorTest(false);
     gl.setViewport(0, 0, W, H);
-    // keep the stored offset inside the card
-    if (used.x !== s.zoomOffset.x || used.y !== s.zoomOffset.y) useStore.setState({ zoomOffset: { x: used.x, y: used.y } });
+    // the zoom map: a picture of the side you are looking at
+    const mapCanvas = document.querySelector('.zoom-map-canvas');
+    if (mapCanvas && e > 0.5) drawZoomMap(mapCanvas, z.camera, s);
+    if (s.zoom && (used.x !== s.zoomOffset.x || used.y !== s.zoomOffset.y)) useStore.setState({ zoomOffset: { x: used.x, y: used.y } });
   }, 1);
   return null;
 }
@@ -749,9 +842,16 @@ function useDropOnDesk() {
       const id = heldToolId(s);
       const def = DEFS.find((d) => d.id === id);
       if (!def) return;
-      const spot = { x: press.point.x, y: press.point.y, yaw: (Math.random() - 0.5) * 0.6 };
-      const problem = placeProblem(def, spot, s);
-      if (problem) {
+      // a little natural tilt if it fits, otherwise straight – whichever tilt has room
+      const tilt = (Math.random() - 0.5) * 0.3;
+      let spot = null, problem = null;
+      for (const yaw of [tilt, 0, -tilt]) {
+        const candidate = { x: press.point.x, y: press.point.y, yaw };
+        const p = placeProblem(def, candidate, s);
+        if (!p) { spot = candidate; break; }
+        problem = problem || p;
+      }
+      if (!spot) {
         // the tool stays in the hand until an empty spot is clicked
         s.showToast({
           tool: 'Oops! This place is occupied by another tool. Please put it down in an empty spot :)',

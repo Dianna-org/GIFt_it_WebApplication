@@ -1,7 +1,7 @@
 import { useRef } from 'react';
-import * as THREE from 'three';
 import { useStore, ZOOM_MAX } from '../store.js';
-import { hitCardPlane, offsetOf, zoomView } from '../scene/zoom.js';
+import { offsetOf, zoomView } from '../scene/zoom.js';
+import { canvasToWorld } from '../scene/Card.jsx';
 
 /** Top bar: "Zoom in" is always there; the zoom slider and "Zoom out" only while zoomed. */
 export function ZoomControls() {
@@ -25,34 +25,37 @@ export function ZoomControls() {
   );
 }
 
-const ndc = new THREE.Vector2();
-const ray = new THREE.Raycaster();
-
-/** While zoomed: the right side of the screen and the zoom map (click or drag it to look elsewhere). */
+/**
+ * While zoomed: the divider of the right side and the zoom map – a picture of the side of the card you
+ * are looking at, with a red frame for the part shown in the zoomed view. Click or drag it to move.
+ * The renderer (scene/Desk.jsx) draws into the map and moves the divider every frame, so both follow
+ * the zoom animation exactly.
+ */
 export function ZoomOverlay() {
   const zoom = useStore((s) => s.zoom);
   const dragging = useRef(false);
   if (!zoom) return null;
 
   const lookAt = (e) => {
+    const m = zoomView.map;
+    if (!m) return;
     const r = e.currentTarget.getBoundingClientRect();
-    ndc.set(((e.clientX - r.left) / r.width) * 2 - 1, -((e.clientY - r.top) / r.height) * 2 + 1);
-    ray.setFromCamera(ndc, zoomView.mapCamera);
-    const hit = hitCardPlane(ray.ray);
-    if (hit) useStore.setState({ zoomOffset: offsetOf(hit) });
+    const px = ((e.clientX - r.left) / r.width) * e.currentTarget.width;
+    const py = ((e.clientY - r.top) / r.height) * e.currentTarget.height;
+    const cx = m.srcX + ((px - m.ix) / m.iw) * m.srcW;
+    const cy = ((py - m.iy) / m.ih) * m.srcH;
+    useStore.setState({ zoomOffset: offsetOf(canvasToWorld(m.face, cx, cy)) });
   };
 
   return (
     <>
       <div className="zoom-area" aria-hidden="true" />
       <div className="zoom-map" title="Zoom map – the red frame is what you see. Click or drag to move around.">
-        <span className="zoom-map-title">Zoom map</span>
-        <div className="zoom-map-view"
+        <span className="zoom-map-title">Zoom map <small className="zoom-map-side" /></span>
+        <canvas className="zoom-map-canvas" width={216} height={150}
           onPointerDown={(e) => { dragging.current = true; e.currentTarget.setPointerCapture(e.pointerId); lookAt(e); }}
           onPointerMove={(e) => { if (dragging.current) lookAt(e); }}
-          onPointerUp={() => { dragging.current = false; }}>
-          <svg className="zoom-map-svg"><polygon className="zoom-map-rect" points="" /></svg>
-        </div>
+          onPointerUp={() => { dragging.current = false; }} />
       </div>
     </>
   );
