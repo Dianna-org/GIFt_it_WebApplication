@@ -2,6 +2,8 @@ import { useEffect, useRef, useState } from 'react';
 import { useStore } from '../store.js';
 import { DRAW_TOOLS, FONTS, PASTELS, TAPE_PATTERNS, TOOL_LABELS } from '../config.js';
 import { STICKERS, stickerCanvas } from '../engine/stickers.js';
+import { PATTERNS } from '../engine/patterns.js';
+import { renderStroke } from '../engine/brushes.js';
 import { cardIsOpen, putCardDown, turnCardPage } from '../scene/Card.jsx';
 import { eraseAllWithConfirm } from '../actions.js';
 import { ZoomControls } from './Zoom.jsx';
@@ -68,6 +70,42 @@ function ColorPalette() {
   );
 }
 
+/** A little preview of a pattern: shapes stamped along a gentle wave. */
+function PatternPreview({ id, color, rainbow }) {
+  const ref = useRef();
+  useEffect(() => {
+    const c = ref.current;
+    const g = c.getContext('2d');
+    g.clearRect(0, 0, c.width, c.height);
+    const pts = Array.from({ length: 40 }, (_, i) => ({ x: 10 + i * 3.3, y: c.height / 2 + Math.sin(i / 6) * 6 }));
+    renderStroke(g, 'pattern', pts, { size: 18, color, seed: 7, pattern: id, spacing: 100, rainbow });
+  }, [id, color, rainbow]);
+  return <canvas ref={ref} width={150} height={40} />;
+}
+
+function PatternOptions() {
+  const t = useStore((s) => s.toolSettings.pattern);
+  const color = useStore((s) => s.color);
+  const setToolSetting = useStore((s) => s.setToolSetting);
+  return (
+    <>
+      <div className="patterns">
+        {PATTERNS.map((p) => (
+          <button key={p.id} className={'pat' + (t.pattern === p.id ? ' on' : '')} onClick={() => setToolSetting('pattern', { pattern: p.id })} title={p.label}>
+            <PatternPreview id={p.id} color={color} rainbow={t.rainbow} />
+            <span>{p.label}</span>
+          </button>
+        ))}
+      </div>
+      <div className="row">
+        <button className={'chip wide-chip' + (!t.rainbow ? ' on' : '')} onClick={() => setToolSetting('pattern', { rainbow: false })}>My colour</button>
+        <button className={'chip wide-chip' + (t.rainbow ? ' on' : '')} onClick={() => setToolSetting('pattern', { rainbow: true })}>🌈 Rainbow</button>
+      </div>
+      <Slider label="Spacing" value={t.spacing} min={40} max={250} suffix="%" onChange={(v) => setToolSetting('pattern', { spacing: v })} hint="how far apart the shapes are" />
+    </>
+  );
+}
+
 function StickerButton({ id }) {
   const stickerId = useStore((s) => s.stickerId);
   const setSticker = useStore((s) => s.setSticker);
@@ -114,7 +152,8 @@ export function ToolOptions() {
       <div className="options-head">
         <strong>{tool ? TOOL_LABELS[tool] : cardHeld ? 'Holding the card' : 'Pick something from the desk'}</strong>
         <span className="head-actions">
-          {tool && <button className="link" onClick={() => putBackTool(heldToolId(useStore.getState()))}>Put it back (Esc)</button>}
+          {tool && tool !== 'picker' && <button className="link" onClick={() => putBackTool(heldToolId(useStore.getState()))}>Put it back (Esc)</button>}
+          {tool === 'picker' && <button className="link" onClick={() => useStore.getState().clearTool()}>Cancel (Esc)</button>}
         </span>
         {!tool && cardHeld && <button className="link" onClick={putCardDown}>Put the card down</button>}
       </div>
@@ -122,9 +161,11 @@ export function ToolOptions() {
       {!tool && !cardHeld && <p className="muted">Press on a crayon, marker, tape, stickers… and drag straight onto the card, or click it and then draw. Click the desk to leave a tool there. Drag the card sideways to open or close it, from either side; click the card to pick it up and turn it.</p>}
       {!tool && cardHeld && <p className="muted">Drag on the card to turn it (hold Shift to turn it diagonally). Click it, or the desk, to put it down. You can also draw on it while holding it.</p>}
 
+      {tool === 'pattern' && <PatternOptions />}
+
       {draw && (
         <div className="grid3">
-          <Slider label="Thickness" value={t.size} min={DRAW_TOOLS[tool].minSize} max={DRAW_TOOLS[tool].maxSize} onChange={(v) => setToolSetting(tool, { size: v })} />
+          <Slider label={tool === 'pattern' ? 'Size' : 'Thickness'} value={t.size} min={DRAW_TOOLS[tool].minSize} max={DRAW_TOOLS[tool].maxSize} onChange={(v) => setToolSetting(tool, { size: v })} />
           <Slider label="Transparency" value={100 - t.opacity} min={0} max={85} suffix="%" onChange={(v) => setToolSetting(tool, { opacity: 100 - v })} hint="0% = solid" />
           <Slider label="Line shape" value={t.straight} min={0} max={100} onChange={(v) => setToolSetting(tool, { straight: v })} hint="0 wobbly · 50 natural · 100 ruler-straight" />
         </div>
@@ -136,7 +177,16 @@ export function ToolOptions() {
           <p className="muted">Rubs out anything drawn with the pens, crayons and brush. Stickers, tape and text stay – use Undo for those.</p>
         </>
       )}
-      {tool === 'picker' && <p className="muted">Click anywhere on the card to take that colour. It goes straight onto your tools; use “＋ Save colour” to keep it in your palette.</p>}
+      {tool === 'bucket' && (
+        <>
+          <p className="muted">Click the card to fill an area with your colour: an empty folded card fills the whole side you see, an open card fills the half you click, and a closed shape you drew gets filled inside. Lines and stickers stay on top; the eraser can remove the fill.</p>
+          <div className="grid3">
+            <Slider label="Transparency" value={100 - settings.bucket.opacity} min={0} max={85} suffix="%" onChange={(v) => setToolSetting('bucket', { opacity: 100 - v })} hint="0% = solid" />
+            <Slider label="Tolerance" value={settings.bucket.tolerance} min={4} max={100} onChange={(v) => setToolSetting('bucket', { tolerance: v })} hint="higher = also fills similar colours" />
+          </div>
+        </>
+      )}
+      {tool === 'picker' && <p className="muted">The pointer is now a crosshair: click anywhere on the card to take that colour. It goes straight onto your tools; use “＋ Save colour” to keep it in your palette.</p>}
 
       {tool === 'tape' && (
         <>
@@ -174,7 +224,7 @@ export function ToolOptions() {
         </>
       )}
 
-      {(draw || tool === 'text' || tool === 'picker' || !tool) && <ColorPalette />}
+      {(draw || tool === 'text' || tool === 'picker' || tool === 'bucket' || !tool) && <ColorPalette />}
     </div>
   );
 }

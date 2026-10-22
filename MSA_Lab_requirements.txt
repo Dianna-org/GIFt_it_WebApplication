@@ -4,11 +4,17 @@ Create a web application
 To start it again later:
 sudo systemctl start docker
 
-cd /home/dia/Documents/MSA/birthday-card-app
+cd /home/dia/Documents/MSA_Web
 docker compose up -d --build
 
 Web application running at: 
 http://localhost:3000
+
+
+docker ps -a
+docker kill ...
+docker container prune -f
+
 
 
 --------------------------------------------------------------------------------------------------------------------------------------------------------
@@ -270,12 +276,62 @@ If something is unclear, please ask me, and I will try to explain it better.
 
 --------------------------------------------------------------------------------------------------------------------------------------------------------
 
-
-
-
-TODO:
 !!!!!!!!!!!!!!!!!!!!!!!!!!!! ask Claude to write inside a .txt file anything he has done for this app, so if he starts forgetting stuff, he can read that .txt file and remember what he has already done, so he shouldn't repeat
 	implementing something, or testing if it is implemented, or do extra work that is just using tokens and does not help implementing the project !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
+	
+Please write everything that you did till now in a .txt file, everything that you implemented, everything that you think is useful to know, because, if you start forgetting things, you can read this file, and remember if certain features are already implemented, and how they're implemented, so that you don't have to do anything twice or check is some things are implemented or not (that's unnecessary work), and so you can remember all that you did and know where to continue from next time. And please put this file somewhere you can access easily, and when you need to read from it, you can find this file very easily. 
+
+--------------------------------------------------------------------------------------------------------------------------------------------------------
+
+Ok, I have some adjustments I would like to add for this app:
+- please look at CouldNotPickUpBrush.png: there are times when some tools sit close to one another, and the UI can't seem to let the user pick the other tool that sits close to the one in their hands (for example, in this photo,
+  the user holds the glittery pen, and wants to pick up the brush, but the UI doesn't seem to let the user select it => it is blocked); please look at this bug, and fix it, so moments like can never occur anymore;
+  
+If something is unclear, please ask me, and I will try to explain it better.
+And please write down in the PROJECT_NOTES.txt every change you made here.
+
+
+--------------------------------------------------------------------------------------------------------------------------------------------------------
+
+Ok, I have some adjustments I would like to add for this app:
+- please delete the color picker as a tool, but let the color picker exist when the user has to choose a color (like for the palette section, or for the background color choosing)
+	=> the idea is I don't want the color picker to be a tool the user can pick in their hands, that's all;
+  
+If something is unclear, please ask me, and I will try to explain it better.
+And please write down in the PROJECT_NOTES.txt every change you made here.
+
+
+--------------------------------------------------------------------------------------------------------------------------------------------------------
+
+Ok, I have some adjustments I would like to add for this app:
+- now that there is an empty spot, please implement a tool, similar to one in PENUP (called Patterns), which lets you draw with different patterned strokes: dotted lines, bubble line, smiley faces lines, heart lines, different
+  kinds of flowers line, star lines, sparkle lines, smokey line, so on and so forth;
+  
+If something is unclear, please ask me, and I will try to explain it better.
+And please write down in the PROJECT_NOTES.txt every change you made here.
+
+
+--------------------------------------------------------------------------------------------------------------------------------------------------------
+
+
+Ok, I have some adjustments I would like to add for this app:
+- please let the bucket color the spot chosen EVEN IF that spot has been colored before using the bucket
+	=> so the bucket can color at any time, there are no limitations regarding when to color;
+  
+If something is unclear, please ask me, and I will try to explain it better.
+And please write down in the PROJECT_NOTES.txt every change you made here.
+
+
+--------------------------------------------------------------------------------------------------------------------------------------------------------
+
+
+	
+	
+TODO:
+- CHECK IF THERE ARE AT LEAST 3 DYNAMIC ELEMENTS IN THIS WEB APPLICATION!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
+
+- the card in the picture/ animation should be bigger and clearer, so the receiver can see clearly the text written on the birthday card (if there is text on the card);
+- create some startFile, deployApp, runApp, stopApp files, like I have in CampusVirtual;
 - change the name of the app to be: GIFt it! (we'll also have to work on a logo and font for this title, but we'll work on that later)
 - maybe include more details to the text box
 - include order details
@@ -296,4 +352,6 @@ TODO:
 	    next stamp can be the top of the heart, so on and so forth, BUT NEVER SHOULD THE STAMPS LOOK ALL THE SAME; the designs can repeat themselves, BUT they should be different one after the other);
 	    
 - maybe make the title+logo be a button where the user can see their account;
+
+- introduce the idea of mini gifts instead of cards (i.e., ceramic objects which the user can paint over);
 

@@ -1,0 +1,282 @@
+CARD STUDIO – PROJECT NOTES (memory file for future sessions)
+====================================================================
+Last updated: 2026-10-22 (round 13).   Location: /home/dia/Documents/MSA_WebApplication/PROJECT_NOTES.txt
+Read this first before changing anything. Keep it up to date after every change round.
+
+--------------------------------------------------------------------
+0. QUICK FACTS
+--------------------------------------------------------------------
+- What: a birthday-card maker web app (MSA lab project). Brief: MSA_Lab_requirements.txt (the user edits it;
+  do NOT commit changes to it unless asked). Inspiration pictures were in the old folder (low-poly 3D desk,
+  yellow background, folded card, tools around it).
+- Stack: React 18 + Vite + three.js via @react-three/fiber 8 (frontend, plain JS/JSX, no TypeScript),
+  ASP.NET Core 8 minimal API (backend), MongoDB 7. NO PHP (forbidden). Everything must be free.
+- Runs ONLY via Docker / Docker Compose (the user has no local .NET/Node/Mongo):
+      cd /home/dia/Documents/MSA_WebApplication
+      docker compose up -d --build            -> app at http://localhost:3000
+      WEB_PORT=3002 docker compose up -d --build   -> use another port (compose uses ${WEB_PORT:-3000})
+  PORT CLASH: the user also runs another project, "virtual_campus" (containers virtual_campus_web on :3000,
+  virtual_campus_api :5000, virtual_campus_mongo :27017). Never stop it. When :3000 is taken, run Card Studio
+  with WEB_PORT=3002 (I did this in round 9; smoke test: WEB_PORT=3002 scripts/smoke-test.sh).
+      docker compose up -d --build web        -> rebuild only the frontend (most changes)
+      docker compose up -d --build api        -> rebuild only the backend
+  Compose project name = msa_webapplication (network msa_webapplication_default). Mongo is NOT published.
+  .env holds JWT_KEY (git-ignored); .env.example is the template.
+- Tests:
+      docker build --target test frontend     (Vitest, 16 tests, frontend/src/engine/geometry.test.js)
+      docker build --target test backend      (xUnit, 15 tests, backend/CardApi.Tests/RulesTests.cs)
+      scripts/smoke-test.sh                   (17 end-to-end API checks against the running stack)
+  NOTE: /api/auth/* is rate limited to 20 requests/min per IP -> running the smoke test twice in a row can
+  fail the "portfolio is private" check with 401/429. Wait a minute. Not a bug.
+- Git: repo on branch main. User commits themselves or asks me ("Commit"). Commit attribution line:
+  "Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>". Never commit the user's screenshots (*.png in
+  root) or MSA_Lab_requirements.txt unless asked. The .github/ folder (CI workflows) was NOT copied into this
+  folder when the project moved from /home/dia/Documents/MSA/birthday-card-app – CI files are missing here
+  (ci.yml + release.yml existed before; recreate if the user wants CI).
+- Language/UX of the user: writes long lists of adjustments, attaches screenshots in the project root
+  (Screenshot1..4.png, ZoomInMap.png, CouldNotPickUpBrush.png – the last one is NEW and not yet discussed).
+  They test at 1920x1080 in a browser; I test in the built-in browser pane (viewport ~800x600 screenshots,
+  real page often 1024x768 -> scale coordinates!). The pane is often "hidden" -> requestAnimationFrame stops,
+  screenshots are stale: wait 1-2 s and re-screenshot; prefer real clicks (computer tool) over synthetic events.
+
+--------------------------------------------------------------------
+1. HOW I WORK ON THIS PROJECT (lessons learned)
+--------------------------------------------------------------------
+- Production build at :3000 has NO dev hooks. A dev server (Vite) can be started in a throw-away container:
+      cd frontend && docker run -d --name cs-dev --network msa_webapplication_default -p 3001:3000 \
+        -e API_TARGET=http://api:8080 -v "$PWD":/app -w /app node:20-alpine \
+        sh -c "npm install --no-audit --no-fund && npx vite --host 0.0.0.0 --port 3000"
+  It exposes window.__store (zustand), window.__three (R3F state), window.__tools (tool refs), window.__view
+  (camera close-up for checking models). The dev container recently became unreliable (nsfwjs inception model
+  resolve errors, navigation failed) – testing on the production build (:3000) with real clicks works fine.
+  After using it: docker rm -f cs-dev ; docker run --rm -v "$PWD/frontend":/w alpine rm -rf /w/node_modules
+  (node_modules created by the container is root-owned).
+- nginx sends Cache-Control: no-cache for the page and immutable for /assets/ -> the user's browser always
+  gets the newest build (earlier the user saw an OLD cached build – that confused a whole round).
+- window.confirm() is BLOCKED in the user's browser (returns false instantly). Never use confirm()/alert();
+  use the in-app dialog: useStore.getState().ask(message, {ok, danger}) -> Promise<boolean>.
+- Rendering is on demand (frameloop="demand"): anything animating must keep invalidating (RenderOnDemand keeps
+  drawing for ACTIVE_MS=2000 ms after any input/store/paper change; glitter twinkles via a 100 ms interval).
+
+--------------------------------------------------------------------
+2. FILE MAP
+--------------------------------------------------------------------
+backend/CardApi/Program.cs   minimal API: /api/health, /api/auth/register|login (JWT, PBKDF2 PasswordHasher,
+                             rate limit), /api/designs CRUD (JWT, user-scoped, max 20, PUT = same slot),
+                             validation (card sizes, layer keys, PNG data URLs, palette hex, profanity), 25 MB body.
+backend/CardApi/Models.cs    User, Design (Title, CardSize, Background, Image, Mask, Thumbnail, Texts, Layers
+                             dict, Palette list, UpdatedAt), request records.
+backend/CardApi/Rules.cs     AgeRules (min 14), ProfanityFilter (word list, leetspeak, ExactOnly words).
+frontend/nginx.conf          static files + /api proxy to api:8080 + cache headers + security headers.
+frontend/src/
+  config.js        pastel colours, card sizes (a4/a5/a6/square, spread mm), DRAW_TOOLS defaults, labels,
+                   tape patterns, fonts.
+  store.js         zustand store (everything below in section 4).
+  api.js           fetch wrapper (/api, VITE_API_URL override), auto-logout on 401.
+  actions.js       saveDesign (serialize + moderation), confirmDiscard, eraseAllWithConfirm.
+  moderation.js    client profanity filter. imageModeration.js: nsfwjs MobileNetV2 lazy-loaded, fails open.
+  engine/paper.js  CardPaper – THE drawing engine (section 3).
+  engine/brushes.js stroke renderers per tool + BLEND table + glitter sparkle sprite.
+  engine/geometry.js cutTapeStrip (with {mustSpan}), applyStraightness, fitBoxInside, pointInPolygon.
+  engine/pieces.js labelPieces (connected components after card cuts). engine/stickers.js procedural stickers.
+  engine/patterns.js PATTERNS list + STAMPS (shape drawers) + stampPattern() + hslToHex() for the pattern pen.
+  engine/fill.js   floodRegion() (paint-bucket flood fill) + growMask() – pure functions, unit-tested.
+  scene/Desk.jsx   Canvas, camera rig, lights, tool items on the desk, dropping/putting back tools, keeping
+                   tools out from under the card, split-view zoom renderer, zoom map drawing.
+  scene/Card.jsx   the 3D card: meshes, fold/open logic, picking up/turning, all tool pointer handling,
+                   cutting from the desk, fast partial texture uploads.
+  scene/models.jsx all 3D tool models (lathe-based, soft realistic). scene/textures.js procedural textures.
+  scene/pointer.js shared mutable pointer state. scene/zoom.js zoom state + camera aiming helpers.
+  ui/Toolbar.jsx   top bar (Undo, Erase all, Open/Close, Turn card popover, Reset rotation, Put all tools
+                   back, Zoom controls, Background picker) + bottom options panel + palette + toast.
+  ui/Zoom.jsx      ZoomControls (top bar) + ZoomOverlay (divider + zoom map canvas, click/drag to pan).
+  ui/Menu.jsx      right drawer (card size, account, portfolio save/open, export, new card, erase all).
+  ui/Modals.jsx    AuthModal, PortfolioModal, ExportModal (picture/GIF, inside/outside), ConfirmDialog.
+  export/layouts.js 6 picture + 6 animation layouts (2D canvas). export/exporter.js PNG + GIF (gifenc).
+docs/  ARCHITECTURE.md, CI-CD-AND-DEPLOYMENT.md, MARKETING.md, INSTAGRAM.md.  README.md has a feature table.
+
+--------------------------------------------------------------------
+3. DRAWING ENGINE (engine/paper.js – CardPaper)
+--------------------------------------------------------------------
+- Two faces: 'inside' (inside spread) and 'outside' (covers). Canvas width 1500 px, height by card ratio.
+- Each face: objects (tape/stickers/text), ink (drawing), protect (sticker mask: nothing drawn there),
+  compose (what the 3D card shows), glitter list, texts list, hasProtect, used.
+  Ink drawn before an object is erased under it; ink composites ABOVE objects; eraser only touches ink.
+- cut canvas = paper shape (opaque = paper) in INSIDE coordinates; outside face sees it mirrored (x -> w-x).
+- Undo: region snapshots (ImageData of changed rect) – up to 150 steps / 450 MB; recordAll() for erase-all and
+  resize; recordCut() for cuts. paper.undo(), paper.history, paper.canUndo.
+- Strokes: beginStroke(face, tool, pt, opts) / addPoint (marks stale, re-rendered once per frame) / endStroke.
+  Straightness 0 wobbly … 50 natural … 100 ruler. Tools: crayon (grain + multiply), marker, highlighter
+  (chisel, multiply), brush (bristles), glitter (flecks + twinkle sparkles), pattern (stamped shapes), eraser.
+- Pattern pen (tool 'pattern', like PENUP "Patterns"): RENDER.pattern in brushes.js resamples the stroke
+  every size*gap*spacing% px and stamps a shape at each point (engine/patterns.js). 11 patterns: dots,
+  bubbles, smileys, hearts, daisies, blossoms, stars, sparkles, smoke, leaves (vine, alternating sides,
+  follows direction), confetti. Options in toolSettings.pattern: size (10-100, default 40), opacity,
+  straight, pattern ('hearts' default), spacing (40-250 %, default 100), rainbow (hue changes along the
+  stroke). It is ink: eraser removes it, it can't go over stickers, BLEND.pattern = normal. Card.jsx passes
+  pattern/spacing/rainbow in the stroke opts. To add a pattern: add a STAMPS function + PATTERNS entry.
+- Paint bucket: paper.fill(face, p, color, {opacity, tolerance=24}). Flood fill on flatFace(face) pixels
+  starting at p: spreads over pixels whose EVERY RGB channel is within `tolerance` of the clicked colour
+  (max-channel rule, so pale pastel lines still stop the paint – the first RGB-distance rule leaked through a
+  light-pink line). Limits: only the clicked half of the sheet (x < w/2 or >= w/2: the fold separates the
+  halves, a closed card shows one half), not over stickers (protect mask), not off the paper (alpha). Mask is
+  grown 2 px (growMask) so it tucks under soft line edges. Painted on the INK layer in two parts (round 13):
+  the clicked region itself with 'source-over' (ON TOP, so re-filling an already filled area replaces its
+  colour – no limits on how often), and only the 2 px rim (mask minus region) with 'destination-over'
+  (behind existing ink, so lines stay crisp). Eraser can remove fills. Undo via record(rect of mask).
+  (Round 12 painted everything 'destination-over' -> a second fill went BEHIND the first one = invisible.)
+- Objects: placeTape(face, poly, S, angle, pattern), placeSticker(face,id,x,y,size,rot), placeText(face,spec,x,y)
+  (text box always fitted inside the card).
+- Pending tape: setPendingTape({face,S,E,width,pattern}). Cut with scissors -> placeTape.
+- Card cutting: beginCut/addCutPoint/finishCut({onlyHalf}) -> if pieces > 1 -> paper.choice (user clicks the
+  piece to keep) -> chooseCutPiece; cancelChoice keeps the biggest. Scissors path over the desk is kept.
+  Cuts that never touch paper do nothing (no undo step). Closed card: onlyHalf (only the layer being cut).
+  Cut shadows: cutShadows() -> edge rim + 'under' shadow on the inside page when layered (card closed).
+- Rendering: frame(t) redraws only dirty rects per face (markFace(face, rect)) and returns [{face, rect}];
+  Card.jsx uploads only that rect to the GPU (uploadRegion, texSubImage2D). Crease line painted on screen.
+- Save: serialize() -> {image (flat inside), layers {inObjects,inInk,inProtect,outObjects,outInk,outProtect,cut},
+  texts}; load(design) restores; thumbnail(); flatFace(face,t) for exports; sampleColor(face,p) colour picker.
+- resize(sizeId) scales everything to the new card size (undoable). eraseAll() clears both faces + cuts.
+
+--------------------------------------------------------------------
+4. FEATURES IMPLEMENTED (all tested in the browser)
+--------------------------------------------------------------------
+DESK & TOOLS (scene/Desk.jsx)
+- Tools on the left: crayon, marker, highlighter, brush, glitter gel pen (clear barrel, visible coloured gel,
+  never runs out), PATTERN PEN (round 11, in the old pipette spot, home [-11.2,-0.65]), 6 washi tape rolls, scissors (red handles, like user's picture),
+  eraser, sticker sheet, "Aa" text pad. DEFS array holds home positions, kind, len/width/r for footprints.
+- Press on a tool = picked up instantly; keep the button down and drag onto the card to use it at once.
+- Held tools are drawn exactly UNDER THE CURSOR (underCursor(): placed on the eye->cursor line), so where you
+  see it is where it lands. (Lifting straight up made tools look higher than their drop point -> bug fixed.)
+- Click the desk with a tool in hand -> leaves it there (spots[id] = {x,y,yaw}). Refused with a toast
+  "Oops! This place is occupied by another tool…" if placeProblem() says 'tool' (gap 0.22), 'card' (margin
+  0.12) or 'offscreen' (not visible / under panels – checked by projecting to screen against DOM blockers).
+  Drop tries yaws [small random tilt, 0, -tilt] and uses the first that fits (random tilt made it flaky).
+- "Put it back" / Esc / right-click -> putBackTool(id): home if free; else nearest free spot near home on the
+  left; else mirrored place right of the card; else anywhere free (findFreeSpot rings).
+- "🧹 Put all tools back" (top bar, always visible) -> store.putBackAll() -> all spots cleared, tools glide home.
+- KeepToolsVisible: when the card (once settled) covers a tool, the tool moves to the nearest free visible
+  spot (not on other tools). ToolItem animates any change of resting place: pens ROLL (rotation about their
+  length, rolling without slipping), flat things SLIDE with ease-out (~0.65–1.6 s).
+  IMPORTANT: ToolItem passes position/quaternion props only once (startPose) – otherwise React snaps tools.
+- Tape rolls are clickable everywhere (invisible solid cylinder covers the hole).
+- Picking tools is reliable: every long tool (DEFS entries with len) has an invisible GrabArea cylinder
+  (radius = min(0.32, width/2) + 0.06) so thin pens are easy to grab; the nearest object wins. The glitter
+  pen's sparkle flecks (<points>) have raycast={() => null}, and the Canvas raycaster uses
+  Points/Line threshold 0.01. (Bug fixed in round 9: three.js "hits" points from up to 1 world unit away
+  by default, so the glitter pen's flecks stole hover/clicks from the brush next to it.)
+  RULE: any new decorative points/lines/sprites in tool models must get raycast={() => null}.
+- Scissors: with pulled-out tape they ONLY cut the tape (straight line, any angle; the cut may start/end on
+  the desk; a snip that touches the tape is extended across it; a snip only on the desk does nothing).
+  Picked up on their own they cut the card (any shape, from the desk too).
+- Tape flow: press on card + drag pulls tape; release -> roll stays at the end of the tape (doesn't move
+  while scissors cut) -> scissors auto-selected -> cut -> roll + scissors go back, tool returns to tape.
+- Sticker: peels off the sheet and follows the cursor; text pad stays beside the text preview.
+CARD (scene/Card.jsx)
+- Starts folded (front cover). Open/close by sideways drag (no tool) or buttons/O key. Works from front, back,
+  any rotation: fold state store.halves = [a1,a2] (each -1/0/1, ±1 = flipped over that side); planTurn()
+  always turns the layer nearest the viewer towards the viewer. cardIsOpen(halves). turnCardPage(dir).
+  Buttons: "Open card" / "Close ←" / "Close →".
+- Click card (no tool) = pick up; drag = turn (Shift = diagonal); click card/desk = put down (snaps flat).
+  Turn card popover: 3 axes (v vertical/spin, l longitudinal, d diagonal) with sliders. store.angles.
+- "🎯 Reset rotation": angles 0, not held, sheet face-up (open -> [0,0], closed -> [1,0]).
+- Both sides drawable; picking colours, cutting, etc. work on whichever surface is hit.
+UI
+- Palette "My colours": 12 slots, EMPTY for every new project / new visitor, saved PER DESIGN (Design.Palette).
+  Click empty slot = put current colour; click filled = use it; double-click filled = replace with current
+  colour; right-click = empty. Colour wheel + "💧 Pick from card" button + "＋ Save colour".
+- Colour picking from the card is NOT a tool on the desk any more (round 10, user's wish): the palette button
+  "💧 Pick from card" sets tool='picker' (no 3D model in the hand); body gets class 'picking' -> crosshair
+  cursor on the canvas; options panel shows "Pick a colour from the card" + "Cancel (Esc)"; one click on the
+  card samples the colour (paper.sampleColor) and returns to the previous tool (store.prevTool).
+  Do NOT add the pipette back to the desk.
+- Background: pastel list + "Any colour…" picker. Card size can change any time (scaled, undoable).
+- Erase all (top bar + menu) -> in-app confirm -> clears both sides, tape, stickers, text and cuts (undoable).
+- Buttons: hover = warm tint, pressed = deeper; coloured buttons (primary/danger-solid/active) darken and keep
+  readable text (fixed white-on-white bug).
+ZOOM (scene/zoom.js, Desk.jsx SplitRenderer, ui/Zoom.jsx)
+- "🔍 Zoom in" (or +) -> split screen: left = normal desk view (cropped, unchanged), right = magnified card
+  via a second camera (zoom up to 8x). One scene: drawing in the zoomed view works; custom R3F events compute
+  uses the zoom camera for x >= splitPx. Slider + mouse wheel (zooms around the cursor) + arrow keys pan.
+- Animation (ZOOM_ANIM_MS 750): divider slides in from the right edge while the camera flies from the normal
+  view into the card; "↩ Zoom out" (or −) plays it backwards (store.zoomClosing, then zoom=0).
+- Zoom map (top right): a 2D picture of the visible side (open spread or the visible half when closed) with
+  all drawings, desk margin around it, dimmed outside the view and a red frame (zoom camera frustum projected
+  into canvas coords via the visible mesh). Click/drag on the map pans (canvasToWorld + offsetOf).
+SAVE / EXPORT / ACCOUNTS
+- Register (age >= 14, profanity check on name), login, JWT in localStorage. Portfolio modal: max 20,
+  open / download / delete, same slot on re-save. Export modal: 6 picture + 6 animation (GIF) layouts,
+  inside or outside, background = current colour; moderation (text + nsfwjs) before save/export.
+PERFORMANCE
+- frameloop demand + RenderOnDemand (pauses in background/hidden; releases pointer on blur).
+- Per-face dirty rects + texSubImage2D; sparkles via sprite (no shadowBlur); stroke re-render once per frame.
+
+--------------------------------------------------------------------
+5. KNOWN LIMITS / IDEAS NOT DONE
+--------------------------------------------------------------------
+- Image moderation is a generic NSFW model (won't catch every rude doodle); word list can be dodged.
+- Glitter twinkle positions aren't saved (glitter texture is). Account deletion endpoint not built.
+- Deployment not done (needs the user's accounts); docs/CI-CD-AND-DEPLOYMENT.md has free options
+  (Oracle free VM + compose + Caddy, or Render + Atlas + Netlify). Instagram account must be created by the
+  user (docs/INSTAGRAM.md has bio/plan). GDPR note: Romania's digital consent age may be 16, brief says 14.
+- .github CI workflows missing in this folder (see section 0).
+- (CouldNotPickUpBrush.png – handled in round 9, see change log.)
+
+--------------------------------------------------------------------
+6. CHANGE LOG (rounds, newest last)
+--------------------------------------------------------------------
+1  Initial app: 3D desk, tools, drawing engine, tape+scissors, stickers, text, accounts, portfolio, exports,
+   moderation, docs, CI, smoke test.
+2  Eraser, pipette, card cutting with piece choice, roll waits for cut, drawable outside, 3-axis turning,
+   pick up card, Erase all, resize anytime, bg colour picker, my-colours palette, realistic models, 150 undo.
+3  Performance (one texture per face, dirty rects), folded card + crease + cover drag, press-and-drag tools,
+   drop tools on desk, wider tool layout, roll stays still while cutting.
+4  Open/close from front and back (page model), then any side/rotation (halves model); Erase all fixed
+   (confirm() blocked -> in-app dialog).
+5  .gitignore. Project moved to /home/dia/Documents/MSA_WebApplication (git repo).
+6  Reset rotation button; palette per project + double-click replace; render on demand (mouse "hijack" =
+   system slowdown); reset also unflips the sheet.
+7  Closed card cut only on the cut layer; cut shadows; tools roll out from under the card (animated).
+8  Tape cut from desk; drop blocked on occupied spots; smart Put back; Put all tools back; button styles;
+   cache headers; zoom split view + map; held tools under cursor; smaller gaps; zoom animation; picture map;
+   roll hole clickable; drop tilt retry.
+9  (2026-10-22) CouldNotPickUpBrush.png: brush couldn't be picked next to the glitter pen. Cause: the glitter
+   pen's sparkle flecks are a three.js <points> object whose default hit distance is 1 world unit, so they
+   captured the pointer over the neighbouring brush. Fix: flecks unclickable (raycast={() => null}) in
+   scene/models.jsx, Canvas raycaster Points/Line threshold 0.01 in scene/Desk.jsx, plus an invisible
+   GrabArea around each long tool (scene/Desk.jsx) so pens are easy to hit. Verified with real clicks: holding
+   the glitter pen and clicking the brush switches tools; with the glitter pen put down as close to the brush
+   as allowed, hover bands are brush 239-254 px, nothing 257-260, glitter 263+ (800x600 frame).
+   Also: docker-compose web port is now ${WEB_PORT:-3000} and scripts/smoke-test.sh honours WEB_PORT
+   (another project of the user occupies :3000). Tests: 16 frontend + smoke all passed.
+10 (2026-10-22) Removed the pipette colour-picker TOOL from the desk (DEFS entry 'picker', Pipette model in
+   scene/models.jsx and its case in ToolItem deleted). Kept colour picking via the palette button with a
+   crosshair cursor (App.jsx toggles body.picking; styles.css .picking .desk canvas {cursor: crosshair}).
+   TOOL_LABELS.picker = 'Pick a colour from the card'; panel link "Cancel (Esc)" in picker mode.
+   Colour wheels for palette and background unchanged. Verified: desk has no pipette; picking red from the
+   card gives #ee787f and returns to the marker. Tests: 16 frontend + smoke passed. App back on :3000
+   (virtual_campus was not running).
+11 (2026-10-22) NEW Pattern pen tool (user asked for PENUP-like "Patterns"). Files: engine/patterns.js (new),
+   engine/brushes.js (RENDER.pattern, BLEND.pattern), config.js (DRAW_TOOLS.pattern), store.js (pattern
+   settings), scene/Card.jsx (passes pattern opts), scene/models.jsx (PatternPen model: coloured tip, rainbow
+   barrel with tiny hearts/stars/dots, gold star on the cap), scene/textures.js (patternBarrel), scene/Desk.jsx
+   (DEFS entry 'pattern' len 2.2 + model case), ui/Toolbar.jsx (PatternOptions: preview grid of all
+   patterns, My colour / Rainbow chips, Spacing slider; "Size" label), styles.css (.patterns/.pat/.wide-chip),
+   README row. Tests: +3 unit tests (19 frontend total) + smoke passed. Verified in the browser: hearts,
+   rainbow stars, daisies, smoke drawn on the card.
+12 (2026-10-22) NEW Paint bucket tool (user's rules: empty folded card -> whole visible side; empty open card ->
+   only the clicked half; closed shapes -> filled inside). Files: engine/fill.js (new: floodRegion, growMask),
+   engine/paper.js (fill()), scene/models.jsx (PaintBucket: metal pail, paint surface + drip in the current
+   colour, wire handle), scene/Desk.jsx (DEFS 'bucket' kind 'bucket': stands upright, round footprint r 0.48,
+   held tipped towards the card under the cursor and tips more for 0.45 s after each fill = pouring),
+   scene/Card.jsx (handleDown 'bucket' -> paper.fill), store.js (toolSettings.bucket {opacity 100,
+   tolerance 24}), config.js (label), ui/Toolbar.jsx (bucket panel: hint, Transparency + Tolerance sliders,
+   palette), README row. Tests: +6 fill tests (25 frontend) + smoke passed. Verified in the browser with real
+   clicks: folded empty card -> whole cover blue; open card -> only right half pink; pale-pink closed loop ->
+   only its inside yellow.
+13 (2026-10-22) Bucket can re-fill an already filled area any number of times (user request). Cause of the
+   old behaviour: the whole fill was drawn 'destination-over' (behind existing ink), and an earlier fill IS
+   ink, so the new colour ended up underneath it. Fix in engine/paper.js fill(): region drawn source-over
+   (on top), only the grown rim drawn destination-over (behind lines). Verified with real clicks: folded
+   card cover blue -> pink -> yellow; inside a blue drawn outline yellow -> green with the outline still on
+   top. Tests: 25 frontend + smoke passed.

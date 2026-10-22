@@ -5,7 +5,7 @@ import { RoundedBoxGeometry } from 'three/examples/jsm/geometries/RoundedBoxGeom
 import { stickerCanvas, STICKERS } from '../engine/stickers.js';
 import { tapePatternById } from '../engine/paper.js';
 import { makeRng } from '../engine/random.js';
-import { cardboard, crayonLabel, eraserSleeve, markerLabel, tapeLayers, tapeSide } from './textures.js';
+import { cardboard, crayonLabel, eraserSleeve, markerLabel, patternBarrel, tapeLayers, tapeSide } from './textures.js';
 
 // Every tool is modelled with its working tip at the origin and its body running along +Z.
 const PI2 = Math.PI / 2;
@@ -111,7 +111,8 @@ export function GlitterPen({ color }) {
       <Lathe pts={[[0.055, 0.24], [0.09, 0.3], [0.11, 0.42], [0.115, 0.5]]}><Glass /></Lathe>
       {/* the refill: gel, then empty tube */}
       <Tube r={0.032} z0={0.3} z1={1.45}><meshStandardMaterial color={color} roughness={0.25} emissive={color} emissiveIntensity={0.15} /></Tube>
-      <points geometry={flecks}><pointsMaterial color="#ffffff" size={0.03} sizeAttenuation transparent opacity={0.95} /></points>
+      {/* decoration only: never catches the pointer (points are "hit" from far away by default) */}
+      <points geometry={flecks} raycast={() => null}><pointsMaterial color="#ffffff" size={0.03} sizeAttenuation transparent opacity={0.95} /></points>
       <Tube r={0.034} z0={1.45} z1={1.98}><Glass tint="#eef6ff" opacity={0.35} /></Tube>
       <Lathe pts={[[0.115, 0.48], [0.118, 0.55], [0.118, 2.0], [0.112, 2.06]]}><Glass /></Lathe>
       <Lathe pts={[[0.1, 2.04], [0.1, 2.15], [0.085, 2.2], [0, 2.21]]}><Plastic color={color} transparent opacity={0.75} /></Lathe>
@@ -125,13 +126,55 @@ export function GlitterPen({ color }) {
   );
 }
 
-/** Pipette colour picker: glass dropper with a rubber bulb; the liquid shows the current colour. */
-export function Pipette({ color }) {
+/** Pattern pen: a fun stamping pen – coloured tip, rainbow barrel with tiny shapes, a star on the cap. */
+export function PatternPen({ color }) {
+  const barrel = useMemo(() => patternBarrel(), []);
+  const star = useMemo(() => {
+    const sh = new THREE.Shape();
+    for (let i = 0; i < 10; i++) {
+      const a = (i * Math.PI) / 5 - Math.PI / 2, r = i % 2 ? 0.07 : 0.16;
+      if (i === 0) sh.moveTo(Math.cos(a) * r, Math.sin(a) * r); else sh.lineTo(Math.cos(a) * r, Math.sin(a) * r);
+    }
+    sh.closePath();
+    const g = new THREE.ExtrudeGeometry(sh, { depth: 0.05, bevelEnabled: true, bevelThickness: 0.015, bevelSize: 0.015, bevelSegments: 2 });
+    g.translate(0, 0, -0.025);
+    return g;
+  }, []);
   return (
     <group>
-      <Lathe pts={[[0.012, 0.03], [0.02, 0.2], [0.046, 0.36], [0.05, 0.7]]}><meshStandardMaterial color={color} roughness={0.2} /></Lathe>
-      <Lathe pts={[[0, 0], [0.018, 0.01], [0.03, 0.22], [0.06, 0.38], [0.068, 1.32]]}><Glass /></Lathe>
-      <Lathe pts={[[0.068, 1.28], [0.1, 1.34], [0.135, 1.52], [0.135, 1.82], [0.1, 1.96], [0, 2.0]]}><meshStandardMaterial color="#2f3a3d" roughness={0.6} /></Lathe>
+      <Lathe pts={[[0, 0], [0.04, 0.01], [0.075, 0.08], [0.085, 0.2]]}><meshStandardMaterial color={color} roughness={0.6} /></Lathe>
+      <Lathe pts={[[0.085, 0.19], [0.12, 0.26], [0.14, 0.4]]}><Plastic color="#ffffff" /></Lathe>
+      <Tube r={0.14} z0={0.39} z1={1.9}><meshPhysicalMaterial map={barrel} roughness={0.35} clearcoat={0.6} /></Tube>
+      <Lathe pts={[[0.14, 1.88], [0.142, 1.98], [0.12, 2.04], [0, 2.06]]}><Plastic color={color} /></Lathe>
+      <mesh geometry={star} position={[0, 0, 2.12]} rotation={[0, 0, 0]} castShadow>
+        <meshPhysicalMaterial color="#ffd166" metalness={0.3} roughness={0.3} clearcoat={1} />
+      </mesh>
+    </group>
+  );
+}
+
+/** Paint bucket: a little metal pail full of paint in the current colour, with a wire handle and a drip. */
+export function PaintBucket({ color }) {
+  return (
+    <group>
+      {/* pail: outer wall, rim, inner wall (open at the top) */}
+      <Lathe pts={[[0, 0.001], [0.36, 0.001], [0.37, 0.02], [0.44, 0.66], [0.465, 0.68], [0.465, 0.71], [0.43, 0.71], [0.405, 0.66], [0.34, 0.06], [0, 0.06]]} seg={48}>
+        <meshStandardMaterial color="#c3cad1" metalness={0.75} roughness={0.32} side={THREE.DoubleSide} />
+      </Lathe>
+      {/* the paint */}
+      <mesh position={[0, 0, 0.6]}>
+        <circleGeometry args={[0.395, 40]} />
+        <meshPhysicalMaterial color={color} roughness={0.15} clearcoat={1} />
+      </mesh>
+      {/* a drip running down the outside */}
+      <Lathe pts={[[0, 0.36], [0.05, 0.4], [0.045, 0.66], [0, 0.7]]} position={[0.43, 0, 0]} seg={14}>
+        <meshPhysicalMaterial color={color} roughness={0.15} clearcoat={1} />
+      </Lathe>
+      {/* wire handle */}
+      <mesh position={[0, 0, 0.7]} rotation={[0, Math.PI / 2, 0]} castShadow>
+        <torusGeometry args={[0.45, 0.018, 8, 32, Math.PI]} />
+        <Metal color="#8d949b" />
+      </mesh>
     </group>
   );
 }

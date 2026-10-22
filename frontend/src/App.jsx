@@ -10,6 +10,9 @@ import { heldToolId, putBackTool } from './scene/Desk.jsx';
 
 export function App() {
   const panel = useStore((s) => s.panel);
+  const tool = useStore((s) => s.tool);
+  // "Pick from card" (palette button) is not a tool in the hand: the pointer simply becomes a crosshair
+  useEffect(() => { document.body.classList.toggle('picking', tool === 'picker'); }, [tool]);
 
   useEffect(() => {
     const key = (e) => {

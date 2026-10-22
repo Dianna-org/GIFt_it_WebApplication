@@ -25,7 +25,10 @@ export function normalizePalette(list) {
 const toolSettings = {
   ...Object.fromEntries(Object.entries(DRAW_TOOLS).map(([k, v]) => [k, { size: v.size, opacity: v.opacity, straight: v.straight }])),
   eraser: { size: 40 },
+  bucket: { opacity: 100, tolerance: 24 }, // paint bucket: how see-through, how similar colours must be
 };
+// the pattern pen also remembers which pattern, how far apart the shapes are (%) and rainbow colours
+Object.assign(toolSettings.pattern, { pattern: 'hearts', spacing: 100, rainbow: false });
 
 function newPaper(sizeId) {
   const paper = new CardPaper(sizeId);

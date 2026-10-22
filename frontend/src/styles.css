@@ -160,3 +160,10 @@ textarea, select, .text, .form input { width: 100%; font: inherit; padding: 8px 
 .zoom-map-title { display: block; font-size: 11px; font-weight: 800; text-transform: uppercase; letter-spacing: 0.06em; color: var(--muted); margin: 0 2px 4px; }
 .zoom-map-canvas { display: block; width: 216px; border-radius: 6px; cursor: crosshair; touch-action: none; box-shadow: 0 1px 4px rgba(60, 40, 0, 0.25); }
 .zoom-map-side { font-weight: 700; text-transform: none; letter-spacing: 0; color: var(--ink); margin-left: 4px; }
+.picking .desk canvas { cursor: crosshair !important; }
+.patterns { display: grid; grid-template-columns: repeat(auto-fill, minmax(118px, 1fr)); gap: 6px; margin: 6px 0; }
+.pat { display: grid; justify-items: center; gap: 2px; padding: 4px 4px 3px; background: #fff; border: 2px solid var(--line); border-radius: 10px; font-size: 11px; font-weight: 700; }
+.pat canvas { width: 100%; max-width: 150px; height: 34px; }
+.pat.on { border-color: var(--accent); background: #e7f5f2; }
+.pat:hover { border-color: rgba(42, 157, 143, 0.5); }
+.chip.wide-chip { padding: 6px 12px; font-weight: 700; }

@@ -101,3 +101,74 @@ describe('card pieces after a cut', () => {
     expect(r.pieces).toHaveLength(1);
   });
 });
+
+import { PATTERNS, patternById, stampPattern, hslToHex } from './patterns.js';
+import { makeRng } from './random.js';
+describe('pattern pen', () => {
+  // a do-nothing 2D context that counts transforms (one translate per stamped shape)
+  const fakeCtx = () => {
+    const calls = { translate: 0 };
+    const ctx = new Proxy({}, {
+      get: (t, k) => (k in t ? t[k] : k === 'translate' ? () => { calls.translate++; } : () => ({ addColorStop() {} })),
+      set: (t, k, v) => { t[k] = v; return true; },
+    });
+    return { ctx, calls };
+  };
+  it('has unique patterns and falls back to the first one', () => {
+    expect(new Set(PATTERNS.map((p) => p.id)).size).toBe(PATTERNS.length);
+    expect(patternById('nope').id).toBe(PATTERNS[0].id);
+  });
+  it('stamps one shape per point for every pattern', () => {
+    const pts = [{ x: 0, y: 0 }, { x: 20, y: 0 }, { x: 40, y: 5 }];
+    for (const p of PATTERNS) {
+      const { ctx, calls } = fakeCtx();
+      stampPattern(ctx, pts, { size: 20, color: '#e63946', rainbow: p.id === 'stars' }, makeRng(1), p.id);
+      expect(calls.translate).toBeGreaterThanOrEqual(pts.length);
+    }
+  });
+  it('makes rainbow colours', () => {
+    expect(hslToHex(0, 100, 50)).toBe('#ff0000');
+    expect(hslToHex(120, 100, 50)).toBe('#00ff00');
+  });
+});
+
+import { floodRegion, growMask } from './fill.js';
+describe('paint bucket', () => {
+  // white 10x8 picture; '#' = black line pixels
+  const pic = (rows) => {
+    const h = rows.length, w = rows[0].length, d = new Uint8ClampedArray(w * h * 4);
+    rows.forEach((r, y) => [...r].forEach((ch, x) => { const v = ch === '#' ? 0 : 255; const o = (y * w + x) * 4; d[o] = d[o + 1] = d[o + 2] = v; d[o + 3] = 255; }));
+    return { d, w, h };
+  };
+  const count = (m) => m.reduce((a, b) => a + b, 0);
+  it('fills only the inside of a closed shape', () => {
+    const { d, w, h } = pic(['..........', '..#####...', '..#...#...', '..#...#...', '..#####...', '..........']);
+    expect(count(floodRegion(d, w, h, 4, 2))).toBe(6);
+  });
+  it('leaks out of a shape with a gap', () => {
+    const { d, w, h } = pic(['..........', '..##.##...', '..#...#...', '..#####...', '..........']);
+    expect(count(floodRegion(d, w, h, 4, 2))).toBeGreaterThan(20);
+  });
+  it('stays in one half of an open card', () => {
+    const { d, w, h } = pic(['..........', '..........']);
+    expect(count(floodRegion(d, w, h, 2, 0, { x0: 0, x1: 5 }))).toBe(10);
+    expect(floodRegion(d, w, h, 7, 0, { x0: 0, x1: 5 })).toBeNull();
+  });
+  it('does not fill over stickers or holes', () => {
+    const { d, w, h } = pic(['....', '....']);
+    const blocked = new Uint8Array(8); blocked[2] = blocked[6] = 1; // a sticker wall down column 2
+    expect(count(floodRegion(d, w, h, 0, 0, { blocked }))).toBe(4); // only the 2x2 on this side of it
+    d[3] = 0; // pixel 0 is a hole (cut-away paper)
+    expect(floodRegion(d, w, h, 0, 0)).toBeNull();
+  });
+  it('a pale pastel line on cream paper still stops the paint', () => {
+    const w = 5, h = 1, d = new Uint8ClampedArray(w * 4);
+    for (let x = 0; x < w; x++) { d[x * 4] = 255; d[x * 4 + 1] = 253; d[x * 4 + 2] = 248; d[x * 4 + 3] = 255; } // cream
+    d[2 * 4] = 249; d[2 * 4 + 1] = 216; d[2 * 4 + 2] = 225; // light pink line pixel
+    expect(count(floodRegion(d, w, h, 0, 0))).toBe(2);
+  });
+  it('grows a mask under line edges', () => {
+    const m = new Uint8Array(25); m[12] = 1;
+    expect(count(growMask(m, 5, 5, 1))).toBe(5);
+  });
+});

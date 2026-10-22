@@ -1,4 +1,5 @@
 import { makeRng, smoothNoise } from './random.js';
+import { patternById, stampPattern } from './patterns.js';
 
 // How each tool is composited onto the card once the stroke is finished.
 // Every stroke is rendered opaque on its own layer and blended with these settings,
@@ -9,6 +10,7 @@ export const BLEND = {
   highlighter: { op: 'multiply', alpha: 0.5 },
   brush: { op: 'source-over', alpha: 1 },
   glitter: { op: 'source-over', alpha: 1 },
+  pattern: { op: 'source-over', alpha: 1 },
 };
 
 function hexToRgb(hex) {
@@ -68,6 +70,14 @@ export function resample(pts, step) {
 }
 
 const RENDER = {
+  // pattern pen: shapes stamped along the stroke (engine/patterns.js)
+  pattern(ctx, pts, opts) {
+    const rng = makeRng(opts.seed);
+    const p = patternById(opts.pattern);
+    const step = Math.max(2, opts.size * p.gap * ((opts.spacing ?? 100) / 100));
+    stampPattern(ctx, resample(pts, step), opts, rng, p.id);
+  },
+
   marker(ctx, pts, { size, color }) {
     ctx.lineCap = 'round'; ctx.lineJoin = 'round';
     ctx.strokeStyle = color; ctx.lineWidth = size;

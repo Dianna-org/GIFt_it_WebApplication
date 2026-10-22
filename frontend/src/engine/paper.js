@@ -4,6 +4,7 @@ import { applyStraightness, fitBoxInside, pointInPolygon } from './geometry.js';
 import { smoothNoise } from './random.js';
 import { stickerCanvas } from './stickers.js';
 import { labelPieces } from './pieces.js';
+import { floodRegion, growMask } from './fill.js';
 
 // The card has two faces: the inside spread and the outside (back + front cover).
 // Each face keeps three layers so the eraser can remove drawing but never stickers, tape or text:
@@ -855,6 +856,63 @@ export class CardPaper {
     const c = this.flatFace(face, 0);
     const d = ctx2d(c).getImageData(Math.floor(p.x), Math.floor(p.y), 1, 1).data;
     return '#' + [d[0], d[1], d[2]].map((v) => v.toString(16).padStart(2, '0')).join('');
+  }
+
+  /**
+   * Paint bucket. Fills the area around p (same colour, up to `tolerance`) with `color`, inside the half of
+   * the sheet that was clicked (the fold always separates the two halves; a closed card shows one half),
+   * never over stickers and never outside the paper. The fill goes on the ink layer BEHIND existing ink,
+   * so lines stay crisp on top and the eraser can remove the fill. The clicked area itself is painted on top,
+   * so the bucket can re-colour an area it filled before, any number of times. Returns false if nothing was filled.
+   */
+  fill(face, p, color, { opacity = 1, tolerance = 24 } = {}) {
+    if (!this.isOnPaper(face, p)) return false;
+    const F = this.faces[face];
+    const W = this.w, H = this.h;
+    const half = p.x < W / 2 ? [0, Math.floor(W / 2)] : [Math.floor(W / 2), W];
+    const rgba = ctx2d(this.flatFace(face, 0)).getImageData(0, 0, W, H).data;
+    let blocked = null;
+    if (F.hasProtect) {
+      const pr = ctx2d(F.protect).getImageData(0, 0, W, H).data;
+      blocked = new Uint8Array(W * H);
+      for (let i = 0; i < blocked.length; i++) blocked[i] = pr[i * 4 + 3] > 20 ? 1 : 0;
+    }
+    const region = floodRegion(rgba, W, H, p.x, p.y, { x0: half[0], x1: half[1], tolerance, blocked });
+    if (!region) return false;
+    const allowed = new Uint8Array(W * H);
+    for (let i = 0; i < allowed.length; i++) allowed[i] = rgba[i * 4 + 3] >= 128 && !(blocked && blocked[i]) ? 1 : 0;
+    const mask = growMask(region, W, H, 2, { x0: half[0], x1: half[1], allowed });
+    // the changed rectangle (for undo)
+    let x1 = W, y1 = H, x2 = -1, y2 = -1;
+    for (let i = 0; i < mask.length; i++) if (mask[i]) { const x = i % W, y = (i / W) | 0; if (x < x1) x1 = x; if (x > x2) x2 = x; if (y < y1) y1 = y; if (y > y2) y2 = y; }
+    if (x2 < 0) return false;
+    this.record(face, { x: x1, y: y1, w: x2 - x1 + 1, h: y2 - y1 + 1 });
+    this.touched = true;
+    // The clicked area itself is painted ON TOP (so filling an already filled area changes its colour);
+    // only the thin rim grown under the soft edges of lines goes BEHIND the ink, so lines stay crisp.
+    const n = parseInt(color.replace('#', ''), 16);
+    const R = (n >> 16) & 255, G = (n >> 8) & 255, B = n & 255;
+    const paintMask = (keep) => {
+      const img = ctx2d(this.scratch).createImageData(W, H), d = img.data;
+      for (let i = 0; i < mask.length; i++) {
+        if (!keep(i)) continue;
+        d[i * 4] = R; d[i * 4 + 1] = G; d[i * 4 + 2] = B; d[i * 4 + 3] = 255;
+      }
+      const sc = ctx2d(this.scratch);
+      sc.clearRect(0, 0, W, H);
+      sc.putImageData(img, 0, 0);
+      return this.scratch;
+    };
+    const g = ctx2d(F.ink);
+    g.save(); g.globalAlpha = opacity;
+    g.globalCompositeOperation = 'destination-over';
+    g.drawImage(paintMask((i) => mask[i] && !region[i]), 0, 0); // rim: behind the lines
+    g.globalCompositeOperation = 'source-over';
+    g.drawImage(paintMask((i) => region[i]), 0, 0); // the area: on top of any earlier fill
+    g.restore();
+    F.used = true;
+    this.emit();
+    return true;
   }
 
   // ---------- save / load ----------

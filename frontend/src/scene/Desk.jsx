@@ -9,7 +9,7 @@ import { Card, canvasToWorld, cardCutOnDesk, cardIsOpen, cardMeshes, putCardDown
 import { movePointer, pointer } from './pointer.js';
 import { aimCamera, hitCardPlane, offsetOf, SPLIT, zoomView } from './zoom.js';
 import {
-  Brush, Crayon, Eraser, GlitterPen, Highlighter, HeldSticker, Marker, Pipette, Scissors, StickerSheet, TapeRoll, TextPad,
+  Brush, Crayon, Eraser, GlitterPen, Highlighter, HeldSticker, Marker, PaintBucket, PatternPen, Scissors, StickerSheet, TapeRoll, TextPad,
 } from './models.jsx';
 
 const Z = new THREE.Vector3(0, 0, 1);
@@ -25,14 +25,15 @@ const DEFS = [
   { id: 'marker', tool: 'marker', kind: 'pen', len: 1.98, home: [-11.2, 3.35], yaw: -0.03, r: 0.16, label: 'Marker' },
   { id: 'highlighter', tool: 'highlighter', kind: 'pen', len: 2.0, width: 0.5, home: [-11.2, 2.35], yaw: 0.03, r: 0.24, label: 'Highlighter' },
   { id: 'brush', tool: 'brush', kind: 'pen', len: 2.9, home: [-11.25, 1.35], yaw: -0.02, r: 0.12, label: 'Paint brush' },
+  { id: 'pattern', tool: 'pattern', kind: 'pen', len: 2.2, home: [-11.2, -0.65], yaw: -0.04, r: 0.15, label: 'Pattern pen – hearts, stars, flowers, bubbles…' },
   { id: 'glitter', tool: 'glitter', kind: 'pen', len: 2.54, home: [-11.25, 0.35], yaw: 0.03, r: 0.14, label: 'Glitter gel pen' },
-  { id: 'picker', tool: 'picker', kind: 'pen', len: 2.0, home: [-11.2, -0.65], yaw: -0.04, r: 0.14, label: 'Colour picker – take a colour from the card' },
   ...TAPE_PATTERNS.map((p, i) => ({
     id: 'tape-' + p.id, tool: 'tape', variant: p.id, kind: 'roll', label: `Washi tape – ${p.label}`,
     home: [-7.0 + (i % 2) * 1.5, 4.0 - Math.floor(i / 2) * 1.45],
   })),
   { id: 'scissors', tool: 'scissors', kind: 'scissors', len: 2.2, width: 1.2, home: [-11.3, -1.95], yaw: 0.05, r: 0.1, scale: 0.85, label: 'Scissors – cut tape, or cut the card' },
   { id: 'eraser', tool: 'eraser', kind: 'eraser', len: 1.0, width: 0.6, home: [-6.6, -0.6], yaw: 0.1, r: 0.15, label: 'Eraser – removes drawing only' },
+  { id: 'bucket', tool: 'bucket', kind: 'bucket', home: [-5.4, -1.95], yaw: 0, label: 'Paint bucket – fill an area with colour' },
   { id: 'sticker', tool: 'sticker', kind: 'sheet', home: [-10.0, -3.65], yaw: 1.5708, label: 'Stickers' },
   { id: 'text', tool: 'text', kind: 'pad', home: [-7.2, -3.0], yaw: -0.12, label: 'Text box' },
 ];
@@ -57,10 +58,10 @@ function underCursor(out, p, lift, eye) {
 }
 
 function restPose(def, spot) {
-  const flat = def.kind === 'roll' || def.kind === 'sheet' || def.kind === 'pad';
+  const flat = def.kind === 'roll' || def.kind === 'sheet' || def.kind === 'pad' || def.kind === 'bucket';
   const x = spot ? spot.x : def.home[0], y = spot ? spot.y : def.home[1];
   const yaw = (def.yaw || 0) + (spot ? spot.yaw : 0);
-  const pos = new THREE.Vector3(x, y, def.kind === 'roll' ? 0.18 : flat ? 0.045 : def.r || 0.15);
+  const pos = new THREE.Vector3(x, y, def.kind === 'roll' ? 0.18 : def.kind === 'bucket' ? 0 : flat ? 0.045 : def.r || 0.15);
   const quat = flat ? new THREE.Quaternion().setFromAxisAngle(Z, yaw) : def.kind === 'eraser' ? eraserHome(yaw) : qHome(yaw);
   return { pos, quat };
 }
@@ -77,9 +78,9 @@ function toolFootprint(def, spot) {
     for (let t = 0; t <= def.len + 1e-6; t += 0.25) {
       for (const o of [-half, 0, half]) pts.push({ x: x + c * t - sn * o, y: y + sn * t + c * o });
     }
-  } else if (def.kind === 'roll') { // a round roll of tape
+  } else if (def.kind === 'roll' || def.kind === 'bucket') { // round things: a roll of tape, the paint bucket
     pts.push({ x, y });
-    for (const r of [0.3, 0.56]) for (let k = 0; k < 14; k++) pts.push({ x: x + Math.cos((k / 14) * Math.PI * 2) * r, y: y + Math.sin((k / 14) * Math.PI * 2) * r });
+    for (const r of (def.kind === 'bucket' ? [0.25, 0.48] : [0.3, 0.56])) for (let k = 0; k < 14; k++) pts.push({ x: x + Math.cos((k / 14) * Math.PI * 2) * r, y: y + Math.sin((k / 14) * Math.PI * 2) * r });
   } else { // flat things: a rectangle around the centre
     const [hw, hh] = def.kind === 'sheet' ? [0.71, 0.99] : [0.55, 0.78];
     for (let i = -2; i <= 2; i++) for (let j = -2; j <= 2; j++) {
@@ -285,6 +286,22 @@ function KeepToolsVisible() {
   return null;
 }
 
+/**
+ * Pens are thin: an invisible, slightly fatter body around each long tool makes it easy to grab.
+ * It stays well inside the space between tools (they are never put down closer than 0.22 apart).
+ */
+function GrabArea({ def }) {
+  const sc = def.scale || 1;
+  const len = def.len / sc;
+  const r = (Math.min(0.32, (def.width || 0.3) / 2) + 0.06) / sc;
+  return (
+    <mesh position={[0, 0, len / 2]} rotation={[Math.PI / 2, 0, 0]}>
+      <cylinderGeometry args={[r, r, len, 10]} />
+      <meshBasicMaterial colorWrite={false} depthWrite={false} transparent opacity={0} />
+    </mesh>
+  );
+}
+
 function ToolItem({ def }) {
   const ref = useRef();
   const spin = useRef(0);
@@ -397,6 +414,12 @@ function ToolItem({ def }) {
         tmpQuat.copy(qFromDir(ax));
         k = Math.max(k, 1 - Math.exp(-dt * 30));
       }
+    } else if (def.kind === 'bucket') {
+      // held tipped towards the card, ready to pour; tips further for a moment after each fill
+      const pour = Math.max(0, 1 - (now - pointer.placedAt) / 450);
+      underCursor(tmpPos, p, 0.95, state.raycaster.ray.origin);
+      tmpQuat.setFromEuler(new THREE.Euler(-0.55 - pour * 0.6, 0.35, 0));
+      k = Math.max(k, 1 - Math.exp(-dt * 30));
     } else if (def.kind === 'pad') {
       // keep the notepad beside the text box, never on top of it
       let ox = 0.9, oy = -0.4;
@@ -455,7 +478,8 @@ function ToolItem({ def }) {
     case 'highlighter': model = <Highlighter color={color} />; break;
     case 'brush': model = <Brush color={color} />; break;
     case 'glitter': model = <GlitterPen color={color} />; break;
-    case 'picker': model = <Pipette color={color} />; break;
+    case 'pattern': model = <PatternPen color={color} />; break;
+    case 'bucket': model = <PaintBucket color={color} />; break;
     case 'eraser': model = <Eraser />; break;
     case 'scissors': model = <Scissors openRef={open} />; break;
     case 'sticker': model = <StickerSheet />; break;
@@ -465,6 +489,7 @@ function ToolItem({ def }) {
   return (
     <group ref={ref} position={startPose.pos} quaternion={startPose.quat} scale={def.scale || 1} {...(held && def.kind !== 'sheet' ? {} : events)}>
       {model}
+      {def.len && <GrabArea def={def} />}
     </group>
   );
 }
@@ -878,6 +903,7 @@ export function Desk() {
         shadows="soft"
         frameloop="demand"
         events={splitEvents}
+        raycaster={{ params: { Points: { threshold: 0.01 }, Line: { threshold: 0.01 } } }}
         dpr={[1, 1.5]}
         camera={{ fov: 38, position: [0, -5, 11], near: 0.1, far: 80 }}
         gl={{ alpha: true, antialias: true, toneMapping: THREE.NeutralToneMapping, preserveDrawingBuffer: true }}

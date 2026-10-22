@@ -136,8 +136,17 @@ function handleDown(face, pt) {
   if (!paper.isOnPaper(face, pt)) return;
   if (DRAW_TOOLS[tool] || tool === 'eraser') {
     const t = s.toolSettings[tool];
-    paper.beginStroke(face, tool, pt, { size: t.size, opacity: (t.opacity ?? 100) / 100, straight: t.straight ?? 50, color: s.color, seed: ++seedCounter });
+    paper.beginStroke(face, tool, pt, {
+      size: t.size, opacity: (t.opacity ?? 100) / 100, straight: t.straight ?? 50, color: s.color, seed: ++seedCounter,
+      pattern: t.pattern, spacing: t.spacing, rainbow: t.rainbow, // pattern pen only
+    });
     pointer.drawing = true;
+  } else if (tool === 'bucket') {
+    const t = s.toolSettings.bucket;
+    if (paper.fill(face, pt, s.color, { opacity: t.opacity / 100, tolerance: t.tolerance })) {
+      pointer.placedAt = performance.now(); // the bucket tips a little more: pouring
+      s.markDirty();
+    }
   } else if (tool === 'picker') {
     const c = paper.sampleColor(face, pt);
     if (c) { s.setColor(c); s.showToast(`Colour ${c} picked – it is now on your tools.`, 'success'); }

@@ -2,7 +2,7 @@
 # End-to-end API checks against a running stack (docker compose up -d).
 # Usage: scripts/smoke-test.sh [base-url]     (default http://localhost:3000)
 set -u
-BASE="${1:-http://localhost:3000}/api"
+BASE="${1:-http://localhost:${WEB_PORT:-3000}}/api"
 H='Content-Type: application/json'
 fail=0
 check() { # name expected actual

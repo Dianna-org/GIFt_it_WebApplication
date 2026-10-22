@@ -98,3 +98,19 @@ export function eraserSleeve() {
     g.font = 'bold 34px Arial, sans-serif'; g.textAlign = 'center'; g.textBaseline = 'middle'; g.fillText('ERASER', w / 2, h * 0.4);
   });
 }
+
+/** Pattern pen barrel: little hearts, stars and dots on rainbow stripes. */
+export function patternBarrel() {
+  return canvasTex(256, 128, (g, w, h) => {
+    const cols = ['#f9a8b8', '#fcd581', '#a8e0b5', '#9cc9f5', '#c9b2f0'];
+    cols.forEach((c, i) => { g.fillStyle = c; g.fillRect((i * w) / cols.length, 0, w / cols.length + 1, h); });
+    g.fillStyle = 'rgba(255,255,255,.9)';
+    for (let y = 16; y < h; y += 32) for (let x = 14 + ((y / 32) % 2) * 22; x < w; x += 44) {
+      g.save(); g.translate(x, y);
+      if ((x + y) % 3 === 0) { g.beginPath(); for (let k = 0; k < 10; k++) { const a = (k * Math.PI) / 5 - Math.PI / 2, r = k % 2 ? 3 : 7; g.lineTo(Math.cos(a) * r, Math.sin(a) * r); } g.fill(); }
+      else if ((x + y) % 3 === 1) { g.beginPath(); g.moveTo(0, 5); g.bezierCurveTo(-8, 0, -5, -7, 0, -3); g.bezierCurveTo(5, -7, 8, 0, 0, 5); g.fill(); }
+      else { g.beginPath(); g.arc(0, 0, 3.5, 0, 6.3); g.fill(); }
+      g.restore();
+    }
+  });
+}

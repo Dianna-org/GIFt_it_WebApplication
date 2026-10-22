@@ -40,12 +40,14 @@ export const DRAW_TOOLS = {
   highlighter: { label: 'Highlighter', size: 44, minSize: 14, maxSize: 110, opacity: 55, straight: 80, hasOptions: true },
   brush: { label: 'Paint brush', size: 34, minSize: 4, maxSize: 120, opacity: 95, straight: 12, hasOptions: true },
   glitter: { label: 'Glitter pen', size: 16, minSize: 4, maxSize: 50, opacity: 85, straight: 50, hasOptions: true },
+  pattern: { label: 'Pattern pen', size: 40, minSize: 10, maxSize: 100, opacity: 100, straight: 50, hasOptions: true },
 };
 
 export const TOOL_LABELS = {
   ...Object.fromEntries(Object.entries(DRAW_TOOLS).map(([k, v]) => [k, v.label])),
   eraser: 'Eraser',
-  picker: 'Colour picker',
+  bucket: 'Paint bucket',
+  picker: 'Pick a colour from the card',
   tape: 'Washi tape',
   scissors: 'Scissors',
   sticker: 'Stickers',
