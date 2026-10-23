@@ -1,6 +1,6 @@
 CARD STUDIO – PROJECT NOTES (memory file for future sessions)
 ====================================================================
-Last updated: 2026-10-22 (round 13).   Location: /home/dia/Documents/MSA_WebApplication/PROJECT_NOTES.txt
+Last updated: 2026-10-23 (round 18).   Location: /home/dia/Documents/MSA_WebApplication/PROJECT_NOTES.txt
 Read this first before changing anything. Keep it up to date after every change round.
 
 --------------------------------------------------------------------
@@ -11,7 +11,17 @@ Read this first before changing anything. Keep it up to date after every change 
   yellow background, folded card, tools around it).
 - Stack: React 18 + Vite + three.js via @react-three/fiber 8 (frontend, plain JS/JSX, no TypeScript),
   ASP.NET Core 8 minimal API (backend), MongoDB 7. NO PHP (forbidden). Everything must be free.
-- Runs ONLY via Docker / Docker Compose (the user has no local .NET/Node/Mongo):
+- HELPER SCRIPTS (round 14, modelled on /home/dia/Documents/CampusVirtualUPT/*.sh):
+      ./deploy.sh      Docker: creates .env (random JWT_KEY) if missing, checks Docker, refuses if WEB_PORT is
+                       taken by something else, docker compose up --build -d, waits for /api/health, prints URLs.
+      ./stopwebapp.sh  docker compose (with docker-compose.local.yml) down – keeps the mongo-data volume.
+      ./runlocal.sh    no Docker for the app: dotnet build + run backend/CardApi on BACKEND_PORT (5080),
+                       Vite dev server on FRONTEND_PORT (3000, proxy /api -> API_TARGET), MongoDB container from
+                       compose + docker-compose.local.yml (publishes 127.0.0.1:${MONGODB_PORT:-27018}; 27017 is
+                       used by the user's virtual_campus). Refuses busy ports; Ctrl+C stops both servers.
+  The user's machine NOW HAS dotnet (SDK 8.0.131 + 10.0.112, runtimes 8/9/10) and Node 20 (nvm) – earlier it
+  had none. runlocal.sh creates frontend/node_modules and backend bin/obj on the host (git/docker-ignored).
+- Runs via Docker / Docker Compose (or runlocal.sh):
       cd /home/dia/Documents/MSA_WebApplication
       docker compose up -d --build            -> app at http://localhost:3000
       WEB_PORT=3002 docker compose up -d --build   -> use another port (compose uses ${WEB_PORT:-3000})
@@ -25,7 +35,7 @@ Read this first before changing anything. Keep it up to date after every change 
 - Tests:
       docker build --target test frontend     (Vitest, 16 tests, frontend/src/engine/geometry.test.js)
       docker build --target test backend      (xUnit, 15 tests, backend/CardApi.Tests/RulesTests.cs)
-      scripts/smoke-test.sh                   (17 end-to-end API checks against the running stack)
+      scripts/smoke-test.sh                   (20 end-to-end API checks against the running stack)
   NOTE: /api/auth/* is rate limited to 20 requests/min per IP -> running the smoke test twice in a row can
   fail the "portfolio is private" check with 401/429. Wait a minute. Not a bug.
 - Git: repo on branch main. User commits themselves or asks me ("Commit"). Commit attribution line:
@@ -57,6 +67,11 @@ Read this first before changing anything. Keep it up to date after every change 
   use the in-app dialog: useStore.getState().ask(message, {ok, danger}) -> Promise<boolean>.
 - Rendering is on demand (frameloop="demand"): anything animating must keep invalidating (RenderOnDemand keeps
   drawing for ACTIVE_MS=2000 ms after any input/store/paper change; glitter twinkles via a 100 ms interval).
+- Testing freehand shapes on the production build: dispatch PointerEvents on the <canvas> from javascript_tool
+  (pointermove without buttons first, WAIT ~1 s so the held tool settles under the cursor, then pointerdown,
+  moves every 16 ms, pointerup on canvas AND window). Use CSS pixels: the screenshot is scaled (e.g. 800 px
+  wide for a 961 px window) – multiply screenshot coordinates by innerWidth/screenshotWidth. Keep the
+  Browser pane visible (show_pane preview), a hidden pane has no animation frames.
 
 --------------------------------------------------------------------
 2. FILE MAP
@@ -81,6 +96,10 @@ frontend/src/
   engine/pieces.js labelPieces (connected components after card cuts). engine/stickers.js procedural stickers.
   engine/patterns.js PATTERNS list + STAMPS (shape drawers) + stampPattern() + hslToHex() for the pattern pen.
   engine/fill.js   floodRegion() (paint-bucket flood fill) + growMask() – pure functions, unit-tested.
+  engine/shapes.js recognizeShape() for "hold to perfect" (round 16) – pure, tests in engine/shapes.test.js.
+  engine/shapeLibrary.js SHAPES (37 outline shapes for the Shapes tool, round 17) + drawShape + editing maths
+                   (resizeShape, rotateShape, handleAt, boxFromDrag, defaultBox, cleanShape) – tests in
+                   engine/shapeLibrary.test.js. (Not to be confused with shapes.js = hold-to-perfect.)
   scene/Desk.jsx   Canvas, camera rig, lights, tool items on the desk, dropping/putting back tools, keeping
                    tools out from under the card, split-view zoom renderer, zoom map drawing.
   scene/Card.jsx   the 3D card: meshes, fold/open logic, picking up/turning, all tool pointer handling,
@@ -125,6 +144,28 @@ docs/  ARCHITECTURE.md, CI-CD-AND-DEPLOYMENT.md, MARKETING.md, INSTAGRAM.md.  RE
   colour – no limits on how often), and only the 2 px rim (mask minus region) with 'destination-over'
   (behind existing ink, so lines stay crisp). Eraser can remove fills. Undo via record(rect of mask).
   (Round 12 painted everything 'destination-over' -> a second fill went BEHIND the first one = invisible.)
+- Hold to perfect (round 16): while a drawing-tool stroke is live (not the eraser), live.hold = {at, since}
+  is reset whenever the pointer moves more than HOLD_RADIUS (6 px canvas) from `at`. frame() calls
+  checkHold(): after HOLD_MS (650 ms) still, recognizeShape(live.points) is tried ONCE per hold; on success
+  live.perfect = shape and shapePoints() returns shape.points as they are (no straightness, no wobble – the
+  tool's texture/colour/size/opacity stay). paper.onPerfect(shape) is set by Card.jsx -> toast
+  "Perfect <label>!". Moving more than 2*HOLD_RADIUS after the snap clears live.perfect (back to the hand-drawn
+  points, the stroke goes on); smaller trembles while holding are ignored. Lifting the tool keeps whatever
+  is shown (endStroke uses live.shaped). RenderOnDemand's 2 s after the last pointermove covers the 650 ms.
+- recognizeShape(points) in engine/shapes.js: drops duplicate points; too small (diag < 24 px or < 6 pts) ->
+  null. Closed = the end comes back within max(14, 0.2*diag) of the start; the closest start/end pair is
+  searched in the first/last 30 % so an OVERSHOOT past the start is trimmed. Then evenly resampled (hand
+  speed varies). Open strokes: nearly straight (deviation < 12 % of length) -> straight line (angle snapped
+  to 45° steps within 6°); otherwise Douglas-Peucker -> straight segments through the corners ("angle"/
+  "straight lines"). Closed strokes: best-fit ellipse (principal axes) vs. polygon from corner detection
+  (DP from the start and from the farthest point, drop corners with angle > 155° or too close, merge a
+  short bevelled edge – usually where the stroke starts/ends – into one sharp corner via line intersection).
+  Whichever fits better wins (ellipse preferred within 15 %). Ellipse: axis ratio > 0.85 -> circle, else
+  oval (angle snapped to horizontal/vertical within 8°). Polygon: 4 near-right angles (±16°) -> rectangle,
+  square if sides within 10 % (orientation snapped within 8°); all sides within 15 % -> regular polygon
+  (equilateral triangle, regular pentagon...) keeping centre, size, first-corner direction and drawing
+  direction; otherwise the polygon with straight edges through the user's own corners (3–8 corners). So the
+  result is always the SAME shape the user drew, just clean.
 - Objects: placeTape(face, poly, S, angle, pattern), placeSticker(face,id,x,y,size,rot), placeText(face,spec,x,y)
   (text box always fitted inside the card).
 - Pending tape: setPendingTape({face,S,E,width,pattern}). Cut with scissors -> placeTape.
@@ -137,6 +178,27 @@ docs/  ARCHITECTURE.md, CI-CD-AND-DEPLOYMENT.md, MARKETING.md, INSTAGRAM.md.  RE
 - Save: serialize() -> {image (flat inside), layers {inObjects,inInk,inProtect,outObjects,outInk,outProtect,cut},
   texts}; load(design) restores; thumbnail(); flatFace(face,t) for exports; sampleColor(face,p) colour picker.
 - resize(sizeId) scales everything to the new card size (undoable). eraseAll() clears both faces + cuts.
+- Shapes tool objects (round 17): Face.shapes = [{id, kind, x, y, w, h, rot, color, width}] – centre, box size
+  and rotation in canvas px/radians, outline colour + thickness. They are NOT baked into a canvas: render()
+  draws them every time with paintShapes(g, face, rect) – after the ink and the live stroke (so outlines stay
+  on top of bucket fills and pen colouring), clipped to the dirty rect, cut away under stickers (protect
+  mask) – and flatFace() draws them too (so the bucket stops at the outlines and exports include them).
+  The eraser can't remove them (Undo, Delete key or the panel's Delete button). Shape paths live in
+  shapeLibrary.js as commands (M/L/Q/C/Z) in a -1..1 box, normalised so the visible outline fills the box;
+  drawShape transforms the POINTS (not the canvas), so a stretched shape keeps an even line thickness.
+  API: addShape(face, spec) (undo step, selects it), updateShape(face, id, patch, {undo, quiet}),
+  deleteShape, shapeAt(face, p) (topmost box hit), selectShape(face|null, id), selectedShape(),
+  shapeHandleAt(face, p) -> 'nw','n','ne','e','se','s','sw','w','rotate','move' or null.
+  Selection: paper.selected = {face, id}; paintHandles() draws a dashed box, 8 square handles and a round
+  rotate handle (above the top edge, or below the bottom edge when the top would be off the card) – on the
+  screen only, never in flatFace/exports. Handle size follows paper.handlePx (canvas px per screen px),
+  measured every frame in Card.jsx while the Shapes tool is held, so handles stay ~9 screen px at any zoom.
+  Undo: record() now also snapshots F.shapes (also recordAll/eraseAll/resize/load); a whole move/resize/
+  rotate drag is ONE undo step (undo:true only on the first movement); slider thickness changes within
+  1.5 s are one step. Ghost kind 'shape' = the preview (60 % alpha) while hovering / dragging a box.
+  Saved with the design: serialize() returns shapes [{...shape, face}], load() puts them back (cleanShape
+  validates). Backend: Design.Shapes (List<CardShape>), validated in Program.cs ValidShape (max 500, face
+  inside/outside, kind [a-z0-9-], #rrggbb, finite numbers in range, width 1..60).
 
 --------------------------------------------------------------------
 4. FEATURES IMPLEMENTED (all tested in the browser)
@@ -172,6 +234,14 @@ DESK & TOOLS (scene/Desk.jsx)
 - Tape flow: press on card + drag pulls tape; release -> roll stays at the end of the tape (doesn't move
   while scissors cut) -> scissors auto-selected -> cut -> roll + scissors go back, tool returns to tape.
 - Sticker: peels off the sheet and follows the cursor; text pad stays beside the text preview.
+  Over the card (round 18) the held 3D sticker (Desk.jsx PeeledSticker) lies flat just above the paper,
+  EXACTLY where and how it will be stuck: its axes come from the card itself – canvasToWorld of the ghost
+  point and of points 100 px along the sticker's right (cos, sin) and up (sin, -cos) directions in canvas
+  coordinates -> Matrix4.makeBasis -> quaternion. So it matches on a turned card, a picked-up/flipped card
+  and the outside face (which is mirrored in canvas space). Lifted 0.025 towards the camera (0.2 for a
+  moment after sticking one). Off the card it floats/curls as before, rotated by (-stickerRot + card's
+  vertical turn) – canvas angles go clockwise, 3D angles anticlockwise (the old code used +stickerRot,
+  which was the bug).
 CARD (scene/Card.jsx)
 - Starts folded (front cover). Open/close by sideways drag (no tool) or buttons/O key. Works from front, back,
   any rotation: fold state store.halves = [a1,a2] (each -1/0/1, ±1 = flipped over that side); planTurn()
@@ -203,6 +273,35 @@ ZOOM (scene/zoom.js, Desk.jsx SplitRenderer, ui/Zoom.jsx)
 - Zoom map (top right): a 2D picture of the visible side (open spread or the visible half when closed) with
   all drawings, desk margin around it, dimmed outside the view and a red frame (zoom camera frustum projected
   into canvas coords via the visible mesh). Click/drag on the map pans (canvasToWorld + offsetOf).
+- Drag-to-pan (round 15): with NO tool in the hand, a drag that starts in the zoomed (right) view – on the card
+  or on the desk – moves the view like a map (content follows the pointer): zoom.js startZoomPan() turns
+  pixel deltas into zoomOffset changes (world-per-pixel from the zoom camera's distance to the card plane).
+  It replaces the card's own drags there (open/close cover drag, pick-up, turning). A click without moving
+  still picks the card up / puts it down. inZoomedView(nativeEvent) = zoomView.active && offsetX >= splitPx.
+  Hover label "Drag to move around the zoomed card", grab cursor, body.zoom-panning -> grabbing cursor.
+  With a tool in the hand, drags in the zoomed view still draw/cut/etc.
+- Hold to perfect (round 16): draw a shape with any drawing tool (crayon, marker, highlighter, brush, glitter,
+  pattern pen) and keep the tool pressed and still for ~0.65 s at the end -> it becomes the perfect version of
+  the same shape (straight line, circle, oval, triangle, square, rectangle, pentagon, hexagon, any polygon
+  up to 8 corners, open zigzags). Toast "Perfect circle! Keep drawing to undo the snap, or lift the tool to
+  keep it." Not for the eraser. Undo removes it like any stroke. Details in section 3.
+- Shapes tool (round 17, "like in Word"): a see-through teal plastic stencil on the desk (heart, star,
+  circle, triangle, square, hexagon cut-outs; DEFS id 'shapes', kind 'pad', home [-5.5, -3.35]; an invisible
+  plate makes the cut-outs clickable). The panel shows 37 shapes: square, rectangle, rounded rectangle,
+  circle, oval, triangle, right triangle, diamond, parallelogram, trapezoid, pentagon, hexagon, octagon,
+  star, six-point star, burst, heart, moon, cloud, drop, lightning, arrow, plus, speech bubble, thought
+  bubble, soap bubble, smiley face, leaf, flower, tulip, birthday present, balloon, birthday cake, party hat,
+  crown, sun, butterfly. User's wishes: choose the shape like the sticker pack, put it on the card, then it
+  can be rotated and made smaller/bigger, and it stays editable later; OUTLINE ONLY (no fill), so it can be
+  coloured in with the bucket or the pens.
+  How: pick a shape -> click the card (default size 260 canvas px, the shape's own proportions) or drag a
+  box on the card (Shift = own proportions) or drag the icon from the panel onto the card. The new shape is
+  selected: drag inside = move, square handles = resize with the opposite side fixed (Shift keeps the
+  proportions), round handle = rotate (snaps to 15° near those angles, Shift = always 15° steps). Click
+  beside it / "✓ Done" / Esc = finish; click a shape later (with the Shapes tool) to edit it again; Delete or
+  Backspace / "🗑 Delete shape" removes it. With a shape selected, a new colour (palette / wheel) or the
+  "Line thickness" slider (2–40) changes that shape. Cursors and hover hints show what a press will do.
+  Putting the tool away deselects. Shapes are saved in the portfolio and stay editable after reopening.
 SAVE / EXPORT / ACCOUNTS
 - Register (age >= 14, profanity check on name), login, JWT in localStorage. Portfolio modal: max 20,
   open / download / delete, same slot on re-save. Export modal: 6 picture + 6 animation (GIF) layouts,
@@ -280,3 +379,61 @@ PERFORMANCE
    (on top), only the grown rim drawn destination-over (behind lines). Verified with real clicks: folded
    card cover blue -> pink -> yellow; inside a blue drawn outline yellow -> green with the outline still on
    top. Tests: 25 frontend + smoke passed.
+14 (2026-10-23) Helper scripts like CampusVirtualUPT: deploy.sh, stopwebapp.sh, runlocal.sh (+ new
+   docker-compose.local.yml that only publishes Mongo on 127.0.0.1:27018 for local mode). README "Run it"
+   section rewritten. Verified: stopwebapp -> deploy (health OK, smoke passed); runlocal refuses while Docker
+   holds :3000; after stopping, runlocal starts API :5080 + Vite :3000, smoke test passed against it, page
+   renders; SIGINT (Ctrl+C) stops both servers and frees the ports; stopwebapp also removes the local Mongo;
+   deploy again -> smoke passed. App left running in Docker on :3000.
+15 (2026-10-23) Zoomed view: dragging (no tool) pans instead of opening/closing/picking up/turning the card.
+   Files: scene/zoom.js (inZoomedView, startZoomPan; now imports the store), scene/Card.jsx (card pointerdown:
+   pan when in the zoomed view; zoomed hover text/cursor), scene/Desk.jsx (desk pointerdown: pan when in the
+   zoomed view), styles.css (grabbing cursor), README. Verified with real drags at 2x: right-to-left drag on
+   the open card moved the view (map frame shifted) and the card stayed open and not held; upward drag from
+   the desk moved the view. Tests: 25 frontend + smoke passed.
+16 (2026-10-23) NEW "Hold to perfect" geometric shapes (user request: a wobbly circle/triangle drawn with any
+   tool, tool kept pressed on the card -> perfect version of the SAME shape). Files: engine/shapes.js (new:
+   recognizeShape + helpers), engine/shapes.test.js (new, 14 tests: circle, oval, triangle, equilateral,
+   square, rectangle, pentagon, line, size kept, tiny scribble ignored, overshooting circle/triangle, uneven
+   hand speed, bevelled start corner), engine/paper.js (HOLD_MS/HOLD_RADIUS, live.hold/live.perfect,
+   checkHold() called from frame(), onPerfect hook, shapePoints() uses perfect points, addPoint() reverts the
+   snap when the user keeps drawing), scene/Card.jsx (onPerfect -> toast), README row. Problems found while
+   testing and fixed: overshooting the start counted as an open stroke ("straight lines") -> closest
+   start/end pair trimming; a triangle became a "quadrilateral" because the start/end corner was bevelled ->
+   short-edge merge. Verified in the browser (synthetic pointer events, production build): marker circle ->
+   perfect circle; crayon triangle -> equilateral triangle with the same orientation; crayon square -> square;
+   circle snapped then drawing on -> back to the hand-drawn circle plus the new line. Tests: 39 frontend
+   (25 + 14) passed.
+17 (2026-10-23) NEW Shapes tool like Word's shapes (user request; answers: choose like the sticker pack,
+   drag onto the card, rotate / resize afterwards, outline only so it can be coloured in, movable and
+   resizable later). Files: engine/shapeLibrary.js (new: 37 shapes + drawing + editing maths),
+   engine/shapeLibrary.test.js (new, 12 tests: unique ids, every outline fills its box, main outline closed,
+   corner/side/Shift resizing incl. rotated, minimum size, rotate snapping, handle hit-test incl. handle
+   below near the top edge, rotated box test, drag box, default size, cleaning saved data),
+   engine/paper.js (Face.shapes, history, paintShapes/paintHandles, add/update/delete/select/hit-test,
+   flatFace, serialize/load, shape ghost, handlePx), scene/Card.jsx (shapeDown/shapeMove/shapeUp, Shift
+   tracking, handlePx per frame, deselect when the tool is put away), scene/models.jsx (ShapeStencil),
+   scene/Desk.jsx (DEFS 'shapes'), ui/Toolbar.jsx (ShapeOptions panel, ShapeButton icons drawn with
+   drawShape, drag from the panel via pointer.shapeFromPanel), store.js (toolSettings.shapes {kind, width};
+   setColor recolours the selected shape), config.js (label), App.jsx (Delete/Backspace, Esc), styles.css
+   (.shapes-grid), actions.js (shapes in the save payload), backend Models.cs (CardShape, Design.Shapes,
+   DesignRequest.Shapes) + Program.cs (ValidShape, saved on POST/PUT), scripts/smoke-test.sh (+3 checks:
+   shapes saved, shapes come back, bad shape refused), README row.
+   Problems found while testing and fixed: clicking a cut-out of the stencil didn't pick it up (invisible
+   plate added); the flower looked like a football, then had looping petals (petal curves redone).
+   Verified in the browser with real clicks/drags: stencil picked up, 37 icons, click -> heart placed and
+   selected, corner drag resized it with the opposite corner fixed, rotate handle turned it, drag moved it,
+   click beside -> done, drag-a-box made a small heart (rotate handle below because it was at the top edge),
+   Delete removed it, Esc put the stencil back, paint bucket filled exactly the inside of the rotated heart,
+   tulip dragged from the panel onto the card, colour wheel recoloured the selected tulip, Undo reverted the
+   colour then removed the tulip, flower drawn with a drag. Saving/reopening was checked through the API
+   (smoke test), not by clicking Save in the browser. Tests: 51 frontend (25 + 14 + 12), backend, smoke
+   (20 checks) passed.
+18 (2026-10-23) BUG FIX sticker preview rotation (StickerRotationBug.png: with Rotation 125° the sticker in
+   the hand pointed another way than the sticker that was stuck). Causes: the held 3D sticker was turned by
+   +stickerRot around the world Z axis, but canvas rotation runs clockwise (y down) – opposite direction –
+   and it ignored how the card itself is turned/flipped. Fix in scene/Desk.jsx PeeledSticker: over the card
+   it is aligned to the card's own canvas axes (see section 4, Sticker) and lies flat on the exact spot;
+   jumps there at once when it arrives on the card (no slow slide), then follows smoothly. Verified in the
+   browser with real clicks: cake sticker at 125° on a straight card, on a card turned 45° and on the back
+   of a flipped card – preview and stuck sticker identical every time. Tests: 51 frontend passed.

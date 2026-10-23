@@ -7,9 +7,9 @@ import { cardDims, CANVAS_PX_W, TAPE_PATTERNS } from '../config.js';
 import { placeTextBox } from '../engine/paper.js';
 import { Card, canvasToWorld, cardCutOnDesk, cardIsOpen, cardMeshes, putCardDown, tapeCutOnDesk } from './Card.jsx';
 import { movePointer, pointer } from './pointer.js';
-import { aimCamera, hitCardPlane, offsetOf, SPLIT, zoomView } from './zoom.js';
+import { aimCamera, hitCardPlane, inZoomedView, offsetOf, SPLIT, startZoomPan, zoomView } from './zoom.js';
 import {
-  Brush, Crayon, Eraser, GlitterPen, Highlighter, HeldSticker, Marker, PaintBucket, PatternPen, Scissors, StickerSheet, TapeRoll, TextPad,
+  Brush, Crayon, Eraser, GlitterPen, Highlighter, HeldSticker, Marker, PaintBucket, PatternPen, Scissors, ShapeStencil, StickerSheet, TapeRoll, TextPad,
 } from './models.jsx';
 
 const Z = new THREE.Vector3(0, 0, 1);
@@ -36,6 +36,7 @@ const DEFS = [
   { id: 'bucket', tool: 'bucket', kind: 'bucket', home: [-5.4, -1.95], yaw: 0, label: 'Paint bucket – fill an area with colour' },
   { id: 'sticker', tool: 'sticker', kind: 'sheet', home: [-10.0, -3.65], yaw: 1.5708, label: 'Stickers' },
   { id: 'text', tool: 'text', kind: 'pad', home: [-7.2, -3.0], yaw: -0.12, label: 'Text box' },
+  { id: 'shapes', tool: 'shapes', kind: 'pad', home: [-5.5, -3.35], yaw: 0.1, label: 'Shapes – squares, circles, stars, hearts, presents…' },
 ];
 const DESK_CENTRE_X = -3.2; // the camera looks between the tools and the card
 
@@ -484,6 +485,7 @@ function ToolItem({ def }) {
     case 'scissors': model = <Scissors openRef={open} />; break;
     case 'sticker': model = <StickerSheet />; break;
     case 'text': model = <TextPad />; break;
+    case 'shapes': model = <ShapeStencil />; break;
     default: model = <TapeRoll pattern={def.variant} spinRef={spin} />;
   }
   return (
@@ -494,7 +496,9 @@ function ToolItem({ def }) {
   );
 }
 
-// The sticker you picked peels off the sheet and follows the pointer.
+// The sticker you picked peels off the sheet and follows the pointer. Over the card it lies flat exactly
+// where and how it will be stuck (same spot, size and rotation as the result, also on a turned or flipped card).
+const stk = { c: new THREE.Vector3(), ax: new THREE.Vector3(), ay: new THREE.Vector3(), az: new THREE.Vector3(), m: new THREE.Matrix4(), q: new THREE.Quaternion(), e: new THREE.Euler(), p: new THREE.Vector3() };
 function PeeledSticker() {
   const ref = useRef();
   const tool = useStore((s) => s.tool);
@@ -503,15 +507,35 @@ function PeeledSticker() {
     const g = ref.current;
     if (!g) return;
     const s = useStore.getState();
-    const k = 1 - Math.exp(-dt * 9);
+    const k = 1 - Math.exp(-dt * 14);
     const scale = s.stickerSize * (cardDims(s.cardSize).worldW / CANVAS_PX_W);
     const pop = Math.max(0, 1 - (performance.now() - pointer.placedAt) / 250);
-    const p = pointer.world;
-    g.position.lerp(underCursor(new THREE.Vector3(), p, pointer.onCard ? 0.2 + pop * 0.25 : 0.6, state.raycaster.ray.origin), k);
-    g.scale.lerp(new THREE.Vector3(scale, scale, 1), k);
-    const sheet = s.spots.sticker || { x: -10.0, y: -3.65 };
-    const curl = (1 - Math.min(1, g.position.distanceTo(new THREE.Vector3(sheet.x, sheet.y, 0)) / 3)) * 0.9;
-    g.rotation.set(-0.35 - curl * 0.5, curl * 0.3, (s.stickerRot * Math.PI) / 180);
+    const gh = s.paper.ghost;
+    if (pointer.onCard && gh?.kind === 'sticker') {
+      // the sticker's own axes on the card: image right = canvas (cos, sin), image up = canvas (sin, -cos)
+      const { c, ax, ay, az } = stk;
+      c.copy(canvasToWorld(gh.face, gh.x, gh.y));
+      ax.copy(canvasToWorld(gh.face, gh.x + Math.cos(gh.rot) * 100, gh.y + Math.sin(gh.rot) * 100)).sub(c).normalize();
+      ay.copy(canvasToWorld(gh.face, gh.x + Math.sin(gh.rot) * 100, gh.y - Math.cos(gh.rot) * 100)).sub(c).normalize();
+      az.crossVectors(ax, ay).normalize();
+      stk.q.setFromRotationMatrix(stk.m.makeBasis(ax, ay, az));
+      // just above the paper on the side you are looking at (a little higher for a moment after sticking one)
+      const toEye = stk.p.copy(state.camera.position).sub(c);
+      const lift = (0.025 + pop * 0.2) * (az.dot(toEye) >= 0 ? 1 : -1);
+      stk.p.copy(c).addScaledVector(az, lift);
+      if (g.position.distanceTo(stk.p) > 0.6) g.position.copy(stk.p); // jumped onto the card: no slow slide
+      else g.position.lerp(stk.p, k);
+      g.quaternion.slerp(stk.q, k);
+    } else {
+      const p = pointer.world;
+      g.position.lerp(underCursor(new THREE.Vector3(), p, 0.6, state.raycaster.ray.origin), k);
+      const sheet = s.spots.sticker || { x: -10.0, y: -3.65 };
+      const curl = (1 - Math.min(1, g.position.distanceTo(new THREE.Vector3(sheet.x, sheet.y, 0)) / 3)) * 0.9;
+      // canvas angles turn clockwise, 3D angles anticlockwise; follow the card's own turn too
+      stk.e.set(-0.35 - curl * 0.5, curl * 0.3, (-s.stickerRot + s.angles.v) * (Math.PI / 180));
+      g.quaternion.slerp(stk.q.setFromEuler(stk.e), k);
+    }
+    g.scale.lerp(stk.p.set(scale, scale, 1), k);
   });
   if (tool !== 'sticker') return null;
   return (
@@ -846,6 +870,8 @@ function DeskPlane() {
         tapeCutOnDesk('down', e.ray); // scissors may start a tape cut on the desk, beside the card
         cardCutOnDesk('down', e.ray); // ...or start trimming the card from outside its edge
         const s = useStore.getState();
+        // zoomed in, no tool: dragging the desk in the zoomed view moves around too
+        if (!s.tool && inZoomedView(e.nativeEvent)) { startZoomPan(e.nativeEvent, () => { if (useStore.getState().cardHeld) putCardDown(); }); return; }
         if (!s.tool && s.cardHeld) putCardDown();
         // a click on the desk with a tool in hand leaves the tool there (decided on release, so dragging in to cut still works)
         if (s.tool && !s.paper.choice) pointer.deskPress = { x: e.nativeEvent.clientX, y: e.nativeEvent.clientY, point: e.point.clone(), touchedCard: false };

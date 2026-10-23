@@ -8,6 +8,8 @@ import { tapePatternById, tapePolygon } from '../engine/paper.js';
 import { containsProfanity } from '../moderation.js';
 import { movePointer, pointer } from './pointer.js';
 import { paperBumpTexture } from './textures.js';
+import { inZoomedView, startZoomPan } from './zoom.js';
+import { boxFromDrag, defaultBox, resizeShape, rotateShape } from '../engine/shapeLibrary.js';
 
 const FOLD = 0.03; // radians each half is raised, so the card looks folded open
 const HELD_POS = new THREE.Vector3(0, 0.3, 2.3);
@@ -128,11 +130,102 @@ function finishTapeCut() {
   useStore.setState({ tool: 'tape' }); // the scissors go back, the roll goes back
 }
 
+// ---------------------------------------------------------------- shapes tool
+// Choose a shape in the panel, then click the card (or drag a box on it, or drag the shape from the panel
+// onto the card). The new shape is selected: drag it to move it, the square handles to make it bigger or
+// smaller (Shift keeps the proportions), the round handle to rotate it (Shift: 15° steps). Click beside it
+// to finish; click it again later to change it. Outlines only – colour them in with the bucket or the pens.
+const DEFAULT_SHAPE_PX = 260;
+const SHAPE_CURSOR = { nw: 'nwse-resize', se: 'nwse-resize', ne: 'nesw-resize', sw: 'nesw-resize', n: 'ns-resize', s: 'ns-resize', e: 'ew-resize', w: 'ew-resize', rotate: 'grab', move: 'move' };
+if (typeof window !== 'undefined') {
+  for (const t of ['pointerdown', 'pointermove']) window.addEventListener(t, (e) => { pointer.shift = e.shiftKey; }, { capture: true, passive: true });
+}
+const shapeStyle = (s) => ({ kind: s.toolSettings.shapes.kind, color: s.color, width: s.toolSettings.shapes.width });
+const shapeGhostAt = (s, face, pt) => ({ kind: 'shape', face, shape: { ...shapeStyle(s), ...defaultBox(s.toolSettings.shapes.kind, pt.x, pt.y, DEFAULT_SHAPE_PX) } });
+
+function shapeDown(face, pt) {
+  const s = st(), paper = s.paper;
+  const h = paper.shapeHandleAt(face, pt);
+  if (h) {
+    const sh = paper.selectedShape();
+    pointer.shapeEdit = { face, id: sh.id, h, s0: { ...sh }, p0: pt, moved: false };
+    paper.setGhost(null);
+    return;
+  }
+  const hit = paper.shapeAt(face, pt);
+  if (hit) {
+    paper.selectShape(face, hit.id);
+    pointer.shapeEdit = { face, id: hit.id, h: 'move', s0: { ...hit }, p0: pt, moved: false };
+    paper.setGhost(null);
+    return;
+  }
+  if (paper.selected) { paper.selectShape(null); paper.setGhost(shapeGhostAt(s, face, pt)); return; } // a click beside it: done editing
+  if (!paper.isOnPaper(face, pt)) return;
+  pointer.shapeCreate = { face, a: pt, dragging: false };
+}
+
+function shapeMove(face, pt) {
+  const s = st(), paper = s.paper;
+  const e = pointer.shapeEdit;
+  if (e) {
+    if (e.face !== face) return;
+    if (!e.moved && Math.hypot(pt.x - e.p0.x, pt.y - e.p0.y) < 2 * paper.handlePx) return;
+    let next;
+    if (e.h === 'move') next = { x: e.s0.x + pt.x - e.p0.x, y: e.s0.y + pt.y - e.p0.y };
+    else if (e.h === 'rotate') next = rotateShape(e.s0, pt, { snap: pointer.shift });
+    else next = resizeShape(e.s0, e.h, pt, { keepRatio: pointer.shift });
+    paper.updateShape(face, e.id, next, { undo: !e.moved, quiet: true }); // one undo step per drag
+    e.moved = true;
+    document.body.style.cursor = e.h === 'rotate' ? 'grabbing' : SHAPE_CURSOR[e.h];
+    return;
+  }
+  const c = pointer.shapeCreate;
+  if (c) {
+    if (c.face !== face) return;
+    if (!c.dragging && Math.hypot(pt.x - c.a.x, pt.y - c.a.y) < 4 * paper.handlePx) return;
+    c.dragging = true;
+    paper.setGhost({ kind: 'shape', face, shape: { ...shapeStyle(s), ...boxFromDrag(s.toolSettings.shapes.kind, c.a, pt, { keepRatio: pointer.shift }) } });
+    return;
+  }
+  // hovering: the cursor shows what pressing would do; with nothing selected the shape follows the pointer
+  const h = paper.shapeHandleAt(face, pt) || (paper.shapeAt(face, pt) ? 'move' : null);
+  document.body.style.cursor = h ? SHAPE_CURSOR[h] : '';
+  useStore.setState({ hover: h === 'rotate' ? 'Drag to rotate (Shift: 15° steps)' : h === 'move' ? (paper.selected ? 'Drag to move the shape' : 'Click to change this shape') : h ? 'Drag to make it bigger or smaller (Shift keeps the proportions)' : null });
+  if (pointer.shapeFromPanel || (!h && !paper.selected)) paper.setGhost(shapeGhostAt(s, face, pt));
+  else if (paper.ghost) paper.setGhost(null);
+}
+
+function shapeUp() {
+  const s = st(), paper = s.paper;
+  const e = pointer.shapeEdit;
+  if (e) {
+    pointer.shapeEdit = null;
+    if (e.moved) { paper.emit(); s.markDirty(); }
+    return;
+  }
+  const c = pointer.shapeCreate;
+  if (c) {
+    pointer.shapeCreate = null;
+    const shape = c.dragging && paper.ghost?.kind === 'shape' ? paper.ghost.shape : shapeGhostAt(s, c.face, c.a).shape;
+    paper.setGhost(null);
+    paper.addShape(c.face, shape);
+    pointer.placedAt = performance.now();
+    s.markDirty();
+    return;
+  }
+  if (pointer.shapeFromPanel) { // dragged from the panel and let go over the card
+    pointer.shapeFromPanel = false;
+    const gh = paper.ghost;
+    if (gh?.kind === 'shape' && pointer.onCard) { paper.setGhost(null); paper.addShape(gh.face, gh.shape); s.markDirty(); }
+  }
+}
+
 function handleDown(face, pt) {
   const s = st(), paper = s.paper, tool = s.tool;
   if (paper.choice) { if (paper.chooseCutPiece(paper.pieceAt(face, pt))) s.markDirty(); return; }
   if (!tool) return;
   if (tool === 'scissors' && !paper.pendingTape) { deskRays = []; startCardCut(face, pt); return; }
+  if (tool === 'shapes') { shapeDown(face, pt); return; }
   if (!paper.isOnPaper(face, pt)) return;
   if (DRAW_TOOLS[tool] || tool === 'eraser') {
     const t = s.toolSettings[tool];
@@ -180,6 +273,7 @@ function handleMove(face, pt) {
     else if (pointer.down) startCardCut(face, pt); // came in from the desk
     return;
   }
+  if (tool === 'shapes') { shapeMove(face, pt); return; }
   const on = paper.isOnPaper(face, pt);
   if (!on) { handleLeave(); return; }
   if (DRAW_TOOLS[tool] || tool === 'eraser') {
@@ -201,7 +295,7 @@ function handleMove(face, pt) {
 function handleLeave() {
   const s = st(), paper = s.paper;
   if (paper.live) { paper.endStroke(); s.markDirty(); }
-  if (paper.ghost && paper.ghost.kind !== 'tapecut') paper.setGhost(null);
+  if (paper.ghost && paper.ghost.kind !== 'tapecut' && !pointer.shapeCreate) paper.setGhost(null);
   pointer.textGhost = null;
   if (paper.choice) paper.hoverPiece(-1);
 }
@@ -212,6 +306,7 @@ function handleUp() {
   pointer.drawing = false;
   pointer.pulling = false;
   if (!tool) return;
+  if (tool === 'shapes') { shapeUp(); return; }
   if (DRAW_TOOLS[tool] || tool === 'eraser') {
     if (paper.live) { paper.endStroke(); s.markDirty(); }
   } else if (tool === 'tape' && wasDrawing && paper.pendingTape) {
@@ -342,6 +437,13 @@ export function Card() {
   const tool = useStore((s) => s.tool);
   const [epoch, setEpoch] = useState(paper.epoch);
   useEffect(() => paper.onChange(() => setEpoch(paper.epoch)), [paper]);
+  // "hold to perfect": tell the user which shape their drawing became
+  useEffect(() => {
+    paper.onPerfect = (shape) => useStore.getState().showToast(`Perfect ${shape.label}! Keep drawing to undo the snap, or lift the tool to keep it.`);
+    return () => { paper.onPerfect = null; };
+  }, [paper]);
+  // putting the shapes tool away finishes editing the selected shape
+  useEffect(() => { if (tool !== 'shapes' && paper.selected) paper.selectShape(null); }, [tool, paper]);
   const d = cardDims(cardSize);
   const group = useRef();
   const halfW = d.worldW / 2;
@@ -438,6 +540,15 @@ export function Card() {
     if (s.cardHeld) tmpQ.premultiply(tilt);
     group.current.quaternion.slerp(tmpQ, k);
     group.current.position.lerp(s.cardHeld ? HELD_POS : FLAT_POS, k);
+    if (s.tool === 'shapes') {
+      // shape handles keep the same size on screen: how many canvas pixels one screen pixel is
+      const f = paper.selected?.face || 'inside';
+      const a = canvasToWorld(f, paper.w * 0.25, paper.h / 2).project(state.camera);
+      const b = canvasToWorld(f, paper.w * 0.25 + 100, paper.h / 2).project(state.camera);
+      const px = Math.hypot(((b.x - a.x) * state.size.width) / 2, ((b.y - a.y) * state.size.height) / 2);
+      const hp = px > 0.5 ? THREE.MathUtils.clamp(100 / px, 1, 20) : paper.handlePx;
+      if (Math.abs(hp - paper.handlePx) > 0.25) { paper.handlePx = hp; if (paper.selected) paper.markFace(paper.selected.face); }
+    }
     for (const { face: f, rect } of paper.frame(state.clock.elapsedTime)) {
       if (!rect || !uploadRegion(state.gl, faceTex[f], paper.faces[f].compose, rect)) faceTex[f].needsUpdate = true;
     }
@@ -486,7 +597,12 @@ export function Card() {
             if (e.button !== 0) return;
             e.stopPropagation();
             pointer.down = true; movePointer(e.point);
-            if (!st().tool && !st().paper.choice) { onCardDownNoTool(e.nativeEvent); return; }
+            if (!st().tool && !st().paper.choice) {
+              // zoomed in: dragging moves around the card instead of opening / picking up / turning it
+              if (inZoomedView(e.nativeEvent)) { startZoomPan(e.nativeEvent, () => (st().cardHeld ? snapFlat() : st().setCardHeld(true))); return; }
+              onCardDownNoTool(e.nativeEvent);
+              return;
+            }
             handleDown(face, toCanvas(e.uv));
           }}
           onPointerMove={(e) => { e.stopPropagation(); if (pointer.deskPress) pointer.deskPress.touchedCard = true; movePointer(e.point); pointer.onCard = true; handleMove(face, toCanvas(e.uv)); }}
@@ -495,7 +611,12 @@ export function Card() {
             pointer.onCard = false;
             requestAnimationFrame(() => { if (!pointer.onCard) handleLeave(); });
           }}
-          onPointerOver={() => { if (!st().tool) { document.body.style.cursor = st().cardHeld ? 'grab' : 'pointer'; useStore.setState({ hover: st().cardHeld ? 'Drag to turn the card (Shift = diagonal) · click to put it down' : 'Click to pick up the card · drag sideways to open or close it (from either side)' }); } }}
+          onPointerOver={(e) => {
+            if (st().tool) return;
+            if (inZoomedView(e.nativeEvent)) { document.body.style.cursor = 'grab'; useStore.setState({ hover: 'Drag to move around the zoomed card' }); return; }
+            document.body.style.cursor = st().cardHeld ? 'grab' : 'pointer';
+            useStore.setState({ hover: st().cardHeld ? 'Drag to turn the card (Shift = diagonal) · click to put it down' : 'Click to pick up the card · drag sideways to open or close it (from either side)' });
+          }}
           onPointerLeave={() => { document.body.style.cursor = ''; useStore.setState({ hover: null }); }}
           customDepthMaterial={depthMats[idx]}
         >

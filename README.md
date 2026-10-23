@@ -4,14 +4,18 @@ Design a birthday card on a 3D desk: pick crayons, markers, a paint brush, glitt
 
 **Stack:** React + Three.js (frontend) · ASP.NET Core 8 (backend) · MongoDB (database) · Docker Compose. No PHP, everything free and open source.
 
-## Run it (only Docker is needed)
+## Run it
+
+Helper scripts (same idea as in CampusVirtualUPT):
 
 ```bash
-cp .env.example .env        # then put a long random string in JWT_KEY (an .env is already generated for you)
-docker compose up -d --build
+./deploy.sh        # build + start everything in Docker (web, API, MongoDB)  -> http://localhost:3000
+./stopwebapp.sh    # stop it again (saved cards and accounts are kept)
+./runlocal.sh      # run API (.NET 8) and frontend (Vite) directly on this computer, MongoDB in Docker; Ctrl+C stops
 ```
 
-Open <http://localhost:3000>. Stop with `docker compose down` (add `-v` to also erase the database).
+`deploy.sh` creates `.env` with a random `JWT_KEY` the first time. Other ports: `WEB_PORT=3002 ./deploy.sh`,
+`FRONTEND_PORT=3002 BACKEND_PORT=5081 ./runlocal.sh`. Without the scripts: `docker compose up -d --build`.
 
 ## Test it
 
@@ -28,14 +32,16 @@ GitHub Actions (`.github/workflows/ci.yml`) runs the same three steps on every p
 | Do this | By doing this |
 | --- | --- |
 | Draw | Press on a pen on the left of the desk and drag straight onto the card (or click it, then draw). Thickness, transparency and "line shape" (wobbly → ruler-straight) are in the panel at the bottom. |
+| Perfect shapes | Draw a shape with any pen, crayon or brush and keep it pressed on the card for a moment at the end: your wobbly circle, oval, triangle, square, rectangle, other polygon or straight line turns into a perfect version of the same shape. Keep drawing to go back to your own line, or lift the tool to keep the perfect one. |
 | Pattern pen | The rainbow-striped pen on the desk draws with shapes instead of a line: dots, bubbles, smiley faces, hearts, daisies, blossoms, stars, sparkles, smoke, a leafy vine or confetti. Choose the pattern, "My colour" or "🌈 Rainbow", size, spacing, transparency and line shape. The eraser removes it like any drawing. |
 | Paint bucket | Pick up the little paint pail and click the card to fill an area with your colour: an empty folded card fills the whole side you see, an open card fills the half you click, a closed shape you drew is filled inside (shapes with gaps let the paint flow out). Lines and stickers stay on top; the eraser removes the fill. Settings: transparency and tolerance. |
 | Erase drawing | Pick up the pink eraser. It removes only what was drawn; stickers, tape and text can only be removed with Undo. |
 | Cut tape | Click a tape roll, drag on the card to pull tape out, release. The roll waits at the end of the tape; drag the scissors across the tape to cut it – the cut may start or end on the desk, so tape at the very edge of the card can be cut too (the card is never cut in this mode). Scissors that only move over the desk do nothing. |
 | Cut the card | Pick up the scissors on their own and drag along the cut (start outside the card to cut in from an edge). If the card splits, click the piece to keep. On a folded card only the layer you cut is cut (a hole in the back cover never shows on the front). Cut edges and holes get a soft shadow so you can see them. |
+| Shapes | Pick up the see-through green stencil, choose a shape (square, circle, star, heart, smiley, leaf, flower, birthday present, cake, balloon, speech bubble, and more – 37 in all) and click the card, drag a box on the card, or drag the shape from the panel onto the card. Drag the shape to move it, drag the square handles to make it bigger or smaller (Shift keeps its proportions), drag the round handle to rotate it. Shapes are outlines only, so you can colour them in with the paint bucket or the pens. Click a shape later to change it again; Delete removes it. |
 | Stickers / text | Click the sticker sheet or the "Aa" pad, choose, then click the card. The text preview shows exactly how it will look; the notepad stays out of the way. |
 | Colours | Colour wheel for any colour, "💧 Pick from card" (the pointer becomes a crosshair; click the card) to copy a colour from the card, and 12 "My colours" slots: click an empty slot to put your current colour in it, click a filled slot to use its colour, double-click a filled slot to replace it with your current colour, right-click to empty it. Every project has its own palette: a new card starts empty, a saved design remembers its colours. |
-| Zoom | "🔍 Zoom in" (or +) splits the screen: the tools stay on the left, the card is magnified on the right (up to 8×) and you can keep drawing there. Set the amount with the slider or the mouse wheel; the zoom map (top right) shows the whole card with a red frame for what you see – click or drag it (or use the arrow keys) to look elsewhere. "↩ Zoom out" (or −) goes back to the normal view. |
+| Zoom | "🔍 Zoom in" (or +) splits the screen: the tools stay on the left, the card is magnified on the right (up to 8×) and you can keep drawing there. Set the amount with the slider or the mouse wheel; the zoom map (top right) shows the whole card with a red frame for what you see – click or drag it (or use the arrow keys) to look elsewhere. With no tool in your hand, dragging in the zoomed view moves around the card like a map (it never opens, picks up or turns the card). "↩ Zoom out" (or −) goes back to the normal view. |
 | Reset rotation | "🎯 Reset rotation" at the top puts the card back flat, the way it started. |
 | Pick up and turn the card | With no tool in hand, click the card. Drag to turn it (Shift = diagonal); click it or the desk to put it down. "Turn card" at the top turns it on three axes: vertical, longitudinal, diagonal. Both sides can be decorated. |
 | Card size | Menu → Card size, at any time; the design is scaled to fit and Undo brings the old size back. |

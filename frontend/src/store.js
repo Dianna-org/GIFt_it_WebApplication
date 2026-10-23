@@ -26,6 +26,7 @@ const toolSettings = {
   ...Object.fromEntries(Object.entries(DRAW_TOOLS).map(([k, v]) => [k, { size: v.size, opacity: v.opacity, straight: v.straight }])),
   eraser: { size: 40 },
   bucket: { opacity: 100, tolerance: 24 }, // paint bucket: how see-through, how similar colours must be
+  shapes: { kind: 'heart', width: 8 }, // shapes tool: which shape, outline thickness (canvas px)
 };
 // the pattern pen also remembers which pattern, how far apart the shapes are (%) and rainbow colours
 Object.assign(toolSettings.pattern, { pattern: 'hearts', spacing: 100, rainbow: false });
@@ -60,7 +61,7 @@ export const useStore = create((set, get) => ({
   dirtySinceSave: false,
 
   // tools
-  tool: null, // crayon | marker | highlighter | brush | glitter | eraser | picker | tape | scissors | sticker | text
+  tool: null, // crayon | marker | highlighter | brush | glitter | eraser | picker | tape | scissors | sticker | text | shapes
   prevTool: null, // tool to go back to after using the colour picker
   color: '#e63946',
   // "My colours" belong to the project: a new card starts with an empty palette, a saved design keeps its own.
@@ -125,7 +126,12 @@ export const useStore = create((set, get) => ({
     delete spots[id];
     set({ tool: null, spots });
   },
-  setColor: (color) => set({ color }),
+  setColor: (color) => {
+    set({ color });
+    // with the shapes tool, a new colour also recolours the shape being edited
+    const s = get(), sel = s.tool === 'shapes' && s.paper.selected;
+    if (sel) { s.paper.updateShape(sel.face, sel.id, { color }, { undo: true }); set({ dirtySinceSave: true }); }
+  },
   addMyColor: (color) => {
     const list = get().myColors.slice();
     if (list.includes(color)) return 'exists';

@@ -86,6 +86,8 @@ button { font: inherit; color: inherit; cursor: pointer; }
 .stk { background: #fff; border: 2px solid var(--line); border-radius: 10px; padding: 2px; }
 .stk.on { border-color: var(--accent); background: #e7f5f2; }
 .stk img { width: 100%; display: block; }
+.shapes-grid { grid-template-columns: repeat(auto-fill, minmax(38px, 1fr)); max-height: 132px; overflow-y: auto; padding-right: 4px; }
+.shape-btn { touch-action: none; cursor: grab; }
 textarea, select, .text, .form input { width: 100%; font: inherit; padding: 8px 10px; border-radius: 10px; border: 1px solid var(--line); background: #fff; }
 .row { display: flex; gap: 8px; margin: 6px 0; }
 .chip { min-width: 38px; border-radius: 10px; border: 1px solid var(--line); background: #fff; }
@@ -167,3 +169,4 @@ textarea, select, .text, .form input { width: 100%; font: inherit; padding: 8px 
 .pat.on { border-color: var(--accent); background: #e7f5f2; }
 .pat:hover { border-color: rgba(42, 157, 143, 0.5); }
 .chip.wide-chip { padding: 6px 12px; font-weight: 700; }
+body.zoom-panning, body.zoom-panning .desk canvas { cursor: grabbing !important; }

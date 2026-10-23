@@ -8,6 +8,8 @@ import { cardIsOpen, putCardDown, turnCardPage } from '../scene/Card.jsx';
 import { eraseAllWithConfirm } from '../actions.js';
 import { ZoomControls } from './Zoom.jsx';
 import { heldToolId, putBackTool } from '../scene/Desk.jsx';
+import { SHAPES, drawShape } from '../engine/shapeLibrary.js';
+import { pointer } from '../scene/pointer.js';
 
 function Slider({ label, value, min, max, onChange, suffix = '', hint }) {
   return (
@@ -117,6 +119,70 @@ function StickerButton({ id }) {
   );
 }
 
+const shapeIcons = {};
+function shapeIcon(kind) {
+  if (!shapeIcons[kind]) {
+    const c = document.createElement('canvas');
+    c.width = c.height = 64;
+    const def = SHAPES.find((x) => x.id === kind);
+    const asp = def.aspect, w = asp >= 1 ? 50 : 50 * asp, h = asp >= 1 ? 50 / asp : 50;
+    drawShape(c.getContext('2d'), { kind, x: 32, y: 32, w, h, rot: 0, color: '#2b2a33', width: 3 });
+    shapeIcons[kind] = c.toDataURL();
+  }
+  return shapeIcons[kind];
+}
+
+function ShapeButton({ def }) {
+  const kind = useStore((s) => s.toolSettings.shapes.kind);
+  const pick = () => {
+    const s = useStore.getState();
+    s.setToolSetting('shapes', { kind: def.id });
+    if (s.paper.selected) s.paper.selectShape(null); // the next click on the card adds this shape
+  };
+  return (
+    <button className={'stk shape-btn' + (kind === def.id ? ' on' : '')} title={def.label + ' – click it, then click the card (or drag it onto the card)'}
+      onPointerDown={(e) => { if (e.button === 0) { pick(); pointer.shapeFromPanel = true; } }}
+      onClick={pick} draggable={false}>
+      <img src={shapeIcon(def.id)} alt={def.label} draggable={false} />
+    </button>
+  );
+}
+
+let lastStyleEdit = { id: null, t: 0 };
+function ShapeOptions() {
+  const t = useStore((s) => s.toolSettings.shapes);
+  const setToolSetting = useStore((s) => s.setToolSetting);
+  const paper = useStore((s) => s.paper);
+  const sel = paper.selectedShape();
+  const setWidth = (width) => {
+    setToolSetting('shapes', { width });
+    if (!sel) return;
+    // one undo step for one slider drag
+    const now = performance.now(), fresh = lastStyleEdit.id !== sel.id || now - lastStyleEdit.t > 1500;
+    lastStyleEdit = { id: sel.id, t: now };
+    paper.updateShape(paper.selected.face, sel.id, { width }, { undo: fresh });
+    useStore.getState().markDirty();
+  };
+  const remove = () => { if (paper.deleteShape(paper.selected.face, sel.id)) useStore.getState().markDirty(); };
+  return (
+    <>
+      <div className="stickers shapes-grid">{SHAPES.map((d) => <ShapeButton key={d.id} def={d} />)}</div>
+      <Slider label="Line thickness" value={sel ? sel.width : t.width} min={2} max={40} onChange={setWidth} />
+      {sel ? (
+        <>
+          <p className="muted"><b>{SHAPES.find((d) => d.id === sel.kind)?.label}</b> selected: drag it to move it, drag the square handles to make it bigger or smaller (Shift keeps the proportions), drag the round handle to rotate it. A new colour or thickness changes it too.</p>
+          <div className="row">
+            <button className="chip wide-chip" onClick={() => paper.selectShape(null)}>✓ Done</button>
+            <button className="chip wide-chip" onClick={remove}>🗑 Delete shape</button>
+          </div>
+        </>
+      ) : (
+        <p className="muted">Pick a shape, then click the card – or drag a box on the card, or drag the shape from here onto the card. Shapes are outlines: colour them in with the paint bucket or the pens. Click a shape on the card later to move, resize or rotate it.</p>
+      )}
+    </>
+  );
+}
+
 export function ToolOptions() {
   const tool = useStore((s) => s.tool);
   const settings = useStore((s) => s.toolSettings);
@@ -209,6 +275,8 @@ export function ToolOptions() {
         </>
       )}
 
+      {tool === 'shapes' && <ShapeOptions />}
+
       {tool === 'text' && (
         <>
           <textarea rows={2} maxLength={200} value={textSpec.text} placeholder="Type your message…" onChange={(e) => setTextSpec({ text: e.target.value })} />
@@ -224,7 +292,7 @@ export function ToolOptions() {
         </>
       )}
 
-      {(draw || tool === 'text' || tool === 'picker' || tool === 'bucket' || !tool) && <ColorPalette />}
+      {(draw || tool === 'text' || tool === 'picker' || tool === 'bucket' || tool === 'shapes' || !tool) && <ColorPalette />}
     </div>
   );
 }

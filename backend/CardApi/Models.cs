@@ -33,9 +33,26 @@ public class Design
     public List<string> Palette { get; set; } = new();
     /// <summary>Every text typed onto the card; stored so the server can moderate it.</summary>
     public List<string> Texts { get; set; } = new();
+    /// <summary>Shapes-tool outlines, kept as objects so they can still be moved, resized and rotated after reopening.</summary>
+    public List<CardShape> Shapes { get; set; } = new();
     public DateTime UpdatedAt { get; set; } = DateTime.UtcNow;
+}
+
+/// <summary>One shape from the shapes tool: centre (X, Y), size (W, H) and rotation in canvas pixels / radians.</summary>
+public class CardShape
+{
+    public string Face { get; set; } = "inside";
+    public string Id { get; set; } = "";
+    public string Kind { get; set; } = "";
+    public double X { get; set; }
+    public double Y { get; set; }
+    public double W { get; set; }
+    public double H { get; set; }
+    public double Rot { get; set; }
+    public string Color { get; set; } = "#333333";
+    public double Width { get; set; } = 8;
 }
 
 public record RegisterRequest(string Email, string DisplayName, string Password, DateTime BirthDate);
 public record LoginRequest(string Email, string Password);
-public record DesignRequest(string? Title, string CardSize, string Background, string Image, string? Mask, string Thumbnail, List<string>? Texts, Dictionary<string, string>? Layers, List<string>? Palette = null);
+public record DesignRequest(string? Title, string CardSize, string Background, string Image, string? Mask, string Thumbnail, List<string>? Texts, Dictionary<string, string>? Layers, List<string>? Palette = null, List<CardShape>? Shapes = null);

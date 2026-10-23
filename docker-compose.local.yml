@@ -1,0 +1,7 @@
+# Used only by ./runlocal.sh: makes the MongoDB container reachable from this computer
+# (localhost only), so the backend running directly on the host can use it.
+# Port 27018, because 27017 is often taken by another local MongoDB.
+services:
+  mongo:
+    ports:
+      - "127.0.0.1:${MONGODB_PORT:-27018}:27017"

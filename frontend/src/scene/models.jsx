@@ -5,6 +5,7 @@ import { RoundedBoxGeometry } from 'three/examples/jsm/geometries/RoundedBoxGeom
 import { stickerCanvas, STICKERS } from '../engine/stickers.js';
 import { tapePatternById } from '../engine/paper.js';
 import { makeRng } from '../engine/random.js';
+import { SHAPES, flatten } from '../engine/shapeLibrary.js';
 import { cardboard, crayonLabel, eraserSleeve, markerLabel, patternBarrel, tapeLayers, tapeSide } from './textures.js';
 
 // Every tool is modelled with its working tip at the origin and its body running along +Z.
@@ -377,3 +378,47 @@ export function TextPad() {
     </group>
   );
 }
+
+/** Shapes tool: a see-through plastic drawing stencil with shape cut-outs (like a geometry template). */
+export function ShapeStencil() {
+  const geo = useMemo(() => {
+    const W = 1.1, H = 1.55, r = 0.1;
+    const plate = new THREE.Shape();
+    plate.moveTo(-W / 2 + r, -H / 2); plate.lineTo(W / 2 - r, -H / 2); plate.quadraticCurveTo(W / 2, -H / 2, W / 2, -H / 2 + r);
+    plate.lineTo(W / 2, H / 2 - r); plate.quadraticCurveTo(W / 2, H / 2, W / 2 - r, H / 2); plate.lineTo(-W / 2 + r, H / 2);
+    plate.quadraticCurveTo(-W / 2, H / 2, -W / 2, H / 2 - r); plate.lineTo(-W / 2, -H / 2 + r); plate.quadraticCurveTo(-W / 2, -H / 2, -W / 2 + r, -H / 2);
+    // cut-outs: the shapes' own outlines (from the shapes library), 2 columns x 3 rows
+    const holes = [['heart', -0.24, 0.47], ['star', 0.24, 0.47], ['circle', -0.24, 0.02], ['triangle', 0.24, 0.02], ['square', -0.24, -0.43], ['hexagon', 0.24, -0.43]];
+    for (const [id, cx, cy] of holes) {
+      const def = SHAPES.find((d) => d.id === id);
+      const pts = flatten(def.cmds, 10)[0];
+      const sz = 0.15;
+      const path = new THREE.Path(pts.slice(0, -1).map((p) => new THREE.Vector2(cx + p.x * sz, cy - p.y * sz)).reverse());
+      plate.holes.push(path);
+    }
+    const g = new THREE.ExtrudeGeometry(plate, { depth: 0.04, bevelEnabled: true, bevelThickness: 0.008, bevelSize: 0.008, bevelSegments: 2, curveSegments: 16 });
+    g.translate(0, 0, -0.02);
+    return g;
+  }, []);
+  // little ruler ticks along one edge
+  const ticks = useMemo(() => Array.from({ length: 14 }, (_, i) => i), []);
+  return (
+    <group>
+      <mesh geometry={geo} castShadow receiveShadow>
+        <meshPhysicalMaterial color="#7fd3c7" roughness={0.12} clearcoat={1} clearcoatRoughness={0.08} transparent opacity={0.72} />
+      </mesh>
+      {/* invisible solid plate, so clicking into a cut-out still picks the stencil up */}
+      <mesh position={[0, 0, 0.03]}>
+        <planeGeometry args={[1.1, 1.55]} />
+        <meshBasicMaterial colorWrite={false} depthWrite={false} transparent opacity={0} />
+      </mesh>
+      {ticks.map((i) => (
+        <mesh key={i} position={[0.5, -0.68 + i * 0.105, 0.03]}>
+          <boxGeometry args={[i % 2 ? 0.05 : 0.09, 0.008, 0.004]} />
+          <meshStandardMaterial color="#1f5f57" />
+        </mesh>
+      ))}
+    </group>
+  );
+}
+

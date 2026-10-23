@@ -35,6 +35,10 @@ check "design saved"             '"id"' "$C"
 check "bad palette refused"      "Invalid colour palette" "$(curl -s -X POST "$BASE/designs" -H "$H" -H "Authorization: Bearer $T" -d "{\"cardSize\":\"a4\",\"background\":\"#fff\",\"image\":\"$PNG\",\"thumbnail\":\"data:image/jpeg;base64,AA\",\"palette\":[\"red\"]}")"
 check "bad layer name refused"   "Invalid layer" "$(curl -s -X POST "$BASE/designs" -H "$H" -H "Authorization: Bearer $T" -d "{\"cardSize\":\"a4\",\"background\":\"#fff\",\"image\":\"$PNG\",\"thumbnail\":\"data:image/jpeg;base64,AA\",\"layers\":{\"evil\":\"x\"}}")"
 ID="$(echo "$C" | python3 -c "import sys,json;print(json.load(sys.stdin)['id'])")"
+SHAPE='{"face":"inside","id":"s1","kind":"heart","x":300,"y":200,"w":180,"h":160,"rot":0.3,"color":"#e63946","width":8}'
+check "shapes are saved"         '"id"' "$(curl -s -X PUT "$BASE/designs/$ID" -H "$H" -H "$AUTH" -d "$(body withshape hi | sed "s/}}\$/},\"shapes\":[$SHAPE]}/")")"
+check "shapes come back"         '"kind":"heart"' "$(curl -s "$BASE/designs/$ID" -H "$AUTH")"
+check "bad shape refused"        "Invalid shape" "$(curl -s -X POST "$BASE/designs" -H "$H" -H "$AUTH" -d "$(body bad hi | sed 's/}}$/},"shapes":[{"face":"top","kind":"x","w":1,"h":1,"color":"#000000","width":5}]}/')")"
 check "saving again reuses slot" '"id"' "$(curl -s -X PUT "$BASE/designs/$ID" -H "$H" -H "$AUTH" -d "$(body renamed hello)")"
 check "still one slot used"      '"id":"'"$ID"'"' "$(curl -s "$BASE/designs" -H "$AUTH")"
 for i in $(seq 2 20); do curl -s -o /dev/null -X POST "$BASE/designs" -H "$H" -H "$AUTH" -d "$(body d$i hi)"; done

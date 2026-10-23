@@ -19,6 +19,13 @@ export function App() {
       if (e.target.closest?.('input, textarea, select')) return;
       if (useStore.getState().dialog) return;
       const s = useStore.getState();
+      // shapes tool: Delete removes the selected shape, Esc first just finishes editing it
+      if (s.tool === 'shapes' && s.paper.selected && (e.key === 'Delete' || e.key === 'Backspace')) {
+        e.preventDefault();
+        if (s.paper.deleteShape(s.paper.selected.face, s.paper.selected.id)) s.markDirty();
+        return;
+      }
+      if (e.key === 'Escape' && s.tool === 'shapes' && s.paper.selected) { s.paper.selectShape(null); return; }
       if (e.key === 'Escape') { if (s.tool) putBackTool(heldToolId(s)); else s.clearTool(); s.setMenu(false); if (s.cardHeld) putCardDown(); }
       if (e.key === 'o') turnCardPage(-1);
       if (e.key === '+' || e.key === '=') s.zoomIn();

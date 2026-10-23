@@ -52,6 +52,7 @@ export const TOOL_LABELS = {
   scissors: 'Scissors',
   sticker: 'Stickers',
   text: 'Text box',
+  shapes: 'Shapes',
 };
 
 export const TAPE_PATTERNS = [

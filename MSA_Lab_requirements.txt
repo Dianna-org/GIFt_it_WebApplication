@@ -5,7 +5,7 @@ To start it again later:
 sudo systemctl start docker
 
 cd /home/dia/Documents/MSA_Web
-docker compose up -d --build
+x
 
 Web application running at: 
 http://localhost:3000
@@ -324,6 +324,55 @@ And please write down in the PROJECT_NOTES.txt every change you made here.
 
 --------------------------------------------------------------------------------------------------------------------------------------------------------
 
+Ok, I have some adjustments I would like to add for this app:
+- please create some helping files for building the app: deploy.sh, runlocal.sh, stopwebapp.sh (look for how they work in Documents/ CampusVirtualUPT)
+  
+If something is unclear, please ask me, and I will try to explain it better.
+And please write down in the PROJECT_NOTES.txt every change you made here.
+
+
+--------------------------------------------------------------------------------------------------------------------------------------------------------
+
+Ok, I have some adjustments I would like to add for this app:
+- please help repair this small bug: when zooming in, let the user use drag the mouse/ mousepad towards where it wants to go (so ONLY WHEN THE ZOOM IN IS ACTIVE, 
+  the dragging action does not open the card, or picks it up and rotates it, but lets the user move in the direction the dragging action points to);
+  
+If something is unclear, please ask me, and I will try to explain it better.
+And please write down in the PROJECT_NOTES.txt every change you made here.
+
+
+--------------------------------------------------------------------------------------------------------------------------------------------------------
+
+Ok, I have some adjustments I would like to add for this app:
+- the user should be able to draw perfect geometric shapes, like so:
+	=> if the user draws, using any tool, a circle, or a triangle, and keeps the tool pressed on the card, this should signal the app that the user wants his drawing of a geometric shape (all wably and uneaven) to pe transormed
+	into a straight and perfect geometric shape (but it has to be the same shape the user has drawn!!!!!!)
+  
+If something is unclear, please ask me, and I will try to explain it better.
+And please write down in the PROJECT_NOTES.txt every change you made here.
+
+
+--------------------------------------------------------------------------------------------------------------------------------------------------------
+
+Ok, I have some adjustments I would like to add for this app:
+- add a geometric shape generator tool (like in WORD), that let's the use add all kinds of geometric shapes:
+  squares, circles, rectangles, smiley faces, bubles, stars, hearts, leaves, flowers, birthday presents, so on and so forth;
+  
+If something is unclear, please ask me, and I will try to explain it better.
+And please write down in the PROJECT_NOTES.txt every change you made here.
+
+--------------------------------------------------------------------------------------------------------------------------------------------------------
+
+Ok, I have some adjustments I would like to add for this app:
+- please look at StickerRotationBug.png: there is a bug when putting down a rotated sticker: the sticker image doesn't mach the rotation; please fix this, so when the user puts down a sticker,
+  they can visualise clearly how it will be put down;
+  
+If something is unclear, please ask me, and I will try to explain it better.
+And please write down in the PROJECT_NOTES.txt every change you made here.
+
+--------------------------------------------------------------------------------------------------------------------------------------------------------
+
+
 
 	
 	
@@ -331,24 +380,18 @@ TODO:
 - CHECK IF THERE ARE AT LEAST 3 DYNAMIC ELEMENTS IN THIS WEB APPLICATION!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
 
 - the card in the picture/ animation should be bigger and clearer, so the receiver can see clearly the text written on the birthday card (if there is text on the card);
-- when zooming in, let the user use drag the mouse/ mousepad towards where it wants to go (so ONLY WHEN THE ZOOM IN IS ACTIVE, the dragging action does not open the card, or picks it up and rotates it, but lets the user move in
-  the direction the dragging action points to);
 - please implement the keys W, A, S, D (and the 4 arrows on the keyboard), so they do:
 	=> A, D (respectively, the left and the right arrow keys) should let the user choose thickness, straightness of a tool, or anything that includes an action of choosing some features for a tool (or at the colour map, when
 	choosing a color);
 	=> W, A, S, D (respectively, all four arrow keys) should let the user move up, left, down, right, when he is using the Zoom in action;
 	
-- the user should be able to draw perfect geometric shapes, like so:
-	=> if the user draws, using any tool, a circle, or a triangle, and keeps the tool pressed on the card, this should signal the app that the user wants his drawing of a geometric shape (all wably and uneaven) to pe transormed
-	into a straight and perfect geometric shape (but it has to be the same shape the user has drawn!!!!!!)
+
 	
 - fix the errors in the screenshots!!!!!!!!
-- add a geometric shape generator tool (like in WORD);
 - add a text box action:
 	=> after the user had written a message, selected a font, and put down the text on the birthday card, the user should be able to modify the length of the text box (like he should be able to choose how much the text should
 	cover the card, and where should the text be), the rotation of the text, and so on;
 
-- create some startFile, deployApp, runApp, stopApp files, like I have in CampusVirtual;
 - change the name of the app to be: GIFt it! (we'll also have to work on a logo and font for this title, but we'll work on that later)
 - maybe include more details to the text box
 - include order details

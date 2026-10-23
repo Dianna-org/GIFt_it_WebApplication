@@ -5,6 +5,13 @@ import { smoothNoise } from './random.js';
 import { stickerCanvas } from './stickers.js';
 import { labelPieces } from './pieces.js';
 import { floodRegion, growMask } from './fill.js';
+import { recognizeShape } from './shapes.js';
+import { drawShape, shapeBounds, handleAt, handlePositions, cleanShape } from './shapeLibrary.js';
+
+// "Hold to perfect": keeping a drawing tool still (within HOLD_RADIUS px) for HOLD_MS at the end of a stroke
+// turns the wobbly drawing into the perfect version of the same shape. Moving on afterwards undoes the snap.
+export const HOLD_MS = 650;
+const HOLD_RADIUS = 6;
 
 // The card has two faces: the inside spread and the outside (back + front cover).
 // Each face keeps three layers so the eraser can remove drawing but never stickers, tape or text:
@@ -175,6 +182,7 @@ class Face {
     this.compose = makeCanvas(w, h);
     this.glitter = [];
     this.texts = [];
+    this.shapes = []; // shapes-tool outlines: stay separate objects, so they can be moved/resized/rotated later
     this.hasProtect = false;
     this.used = false;
   }
@@ -202,6 +210,8 @@ export class CardPaper {
     this.scratch = makeCanvas(this.w, this.h);
     this.scratch2 = makeCanvas(this.w, this.h);
     this.live = null;
+    this.selected = null; // { face, id } of the shape being edited
+    this.handlePx = 6; // canvas px per screen px (set by Card.jsx) – keeps the shape handles a usable size
     this.pendingTape = null;
     this.ghost = null;
     this.cutting = null;
@@ -264,7 +274,7 @@ export class CardPaper {
       entry.bytes += r.w * r.h * 12;
     }
     if (F) {
-      entry.glitter = F.glitter.slice(); entry.texts = F.texts.slice(); entry.hasProtect = F.hasProtect; entry.used = F.used;
+      entry.glitter = F.glitter.slice(); entry.texts = F.texts.slice(); entry.shapes = F.shapes.map((x) => ({ ...x })); entry.hasProtect = F.hasProtect; entry.used = F.used;
       entry.bytes += F.glitter.length * 48;
     }
     this.push(entry);
@@ -278,7 +288,7 @@ export class CardPaper {
       const F = this.faces[id];
       snap.faces[id] = {
         objects: copyCanvas(F.objects), ink: copyCanvas(F.ink), protect: copyCanvas(F.protect),
-        glitter: F.glitter.slice(), texts: F.texts.slice(), hasProtect: F.hasProtect, used: F.used,
+        glitter: F.glitter.slice(), texts: F.texts.slice(), shapes: F.shapes.map((x) => ({ ...x })), hasProtect: F.hasProtect, used: F.used,
       };
     }
     this.push(snap);
@@ -308,7 +318,7 @@ export class CardPaper {
       for (const id of FACES) {
         const F = this.faces[id], s = e.faces[id];
         for (const k of ['objects', 'ink', 'protect']) { const c = ctx2d(F[k]); c.clearRect(0, 0, this.w, this.h); c.drawImage(s[k], 0, 0); }
-        F.glitter = s.glitter; F.texts = s.texts; F.hasProtect = s.hasProtect; F.used = s.used;
+        F.glitter = s.glitter; F.texts = s.texts; F.shapes = s.shapes.map((x) => ({ ...x })); F.hasProtect = s.hasProtect; F.used = s.used;
       }
     } else {
       const F = this.faces[e.face];
@@ -317,8 +327,9 @@ export class CardPaper {
         ctx2d(F.ink).putImageData(e.ink, e.rect.x, e.rect.y);
         ctx2d(F.protect).putImageData(e.protect, e.rect.x, e.rect.y);
       }
-      F.glitter = e.glitter; F.texts = e.texts; F.hasProtect = e.hasProtect; F.used = e.used;
+      F.glitter = e.glitter; F.texts = e.texts; F.shapes = e.shapes.map((x) => ({ ...x })); F.hasProtect = e.hasProtect; F.used = e.used;
     }
+    if (this.selected && !this.selectedShape()) this.selected = null;
     this.emit();
     return true;
   }
@@ -337,8 +348,9 @@ export class CardPaper {
     for (const id of FACES) {
       const F = this.faces[id];
       for (const k of ['objects', 'ink', 'protect']) ctx2d(F[k]).clearRect(0, 0, this.w, this.h);
-      F.glitter = []; F.texts = []; F.hasProtect = false; F.used = false;
+      F.glitter = []; F.texts = []; F.shapes = []; F.hasProtect = false; F.used = false;
     }
+    this.selected = null;
     const g = ctx2d(this.cut); g.fillStyle = '#000'; g.fillRect(0, 0, this.w, this.h);
     this.isCut = false; this.cutChanged();
     this.emit();
@@ -356,6 +368,7 @@ export class CardPaper {
       for (const k of ['objects', 'ink', 'protect']) ctx2d(F[k]).drawImage(o[k], 0, 0, this.w, this.h);
       F.glitter = o.glitter.map((s) => ({ ...s, x: s.x * sx, y: s.y * sy }));
       F.texts = o.texts; F.hasProtect = o.hasProtect; F.used = o.used;
+      F.shapes = o.shapes.map((x) => ({ ...x, x: x.x * sx, y: x.y * sy, w: x.w * sx, h: x.h * sy }));
       this.faces[id] = F;
     }
     this.cut = copyCanvas(old.cut, this.w, this.h);
@@ -374,19 +387,36 @@ export class CardPaper {
   // ---------- strokes (drawing tools and the eraser) ----------
   beginStroke(face, tool, pt, opts) {
     this.touched = true;
-    this.live = { face, tool, points: [pt], opts, sparkles: [] };
+    this.live = { face, tool, points: [pt], opts, sparkles: [], hold: { at: pt, since: performance.now() }, perfect: null };
     this.rerenderLive();
   }
   addPoint(pt) {
     if (!this.live) return;
     const pts = this.live.points, last = pts[pts.length - 1];
     if (Math.hypot(pt.x - last.x, pt.y - last.y) < 0.8) return;
+    const { hold } = this.live;
+    if (Math.hypot(pt.x - hold.at.x, pt.y - hold.at.y) > (this.live.perfect ? HOLD_RADIUS * 2 : HOLD_RADIUS)) {
+      this.live.hold = { at: pt, since: performance.now() };
+      if (this.live.perfect) this.live.perfect = null; // kept drawing after the snap: back to the hand-drawn line
+    } else if (this.live.perfect) return; // small tremble while holding the perfect shape
     pts.push(pt);
     this.live.stale = true; // redrawn once per frame, however many pointer events arrive
   }
+  /** Called every frame: after holding still long enough, swap the drawing for its perfect shape. */
+  checkHold(now = performance.now()) {
+    const L = this.live;
+    if (!L || L.tool === 'eraser' || L.perfect || L.hold.tried || now - L.hold.since < HOLD_MS) return null;
+    L.hold.tried = true; // one try per hold
+    const shape = recognizeShape(L.points);
+    if (!shape) return null;
+    L.perfect = shape;
+    this.rerenderLive();
+    return shape;
+  }
   shapePoints() {
-    const { points, opts, tool } = this.live;
+    const { points, opts, tool, perfect } = this.live;
     if (tool === 'eraser') return points;
+    if (perfect) return perfect.points; // perfect means perfect: no wobble, no straightening
     let pts = applyStraightness(points, opts.straight);
     if (opts.straight < 50 && pts.length > 1) {
       const amp = ((50 - opts.straight) / 50) * Math.max(3, opts.size * 0.45);
@@ -534,8 +564,107 @@ export class CardPaper {
     if (gh.kind === 'sticker') { const r = gh.size * 0.75 + 8; return { x: gh.x - r, y: gh.y - r, w: r * 2, h: r * 2 }; }
     if (gh.kind === 'text') { const b = placeTextBox(gh.spec, gh.x, gh.y, this.w, this.h); return { x: b.x - b.w / 2 - 12, y: b.y - b.h / 2 - 12, w: b.w + 24, h: b.h + 24 }; }
     if (gh.kind === 'tapecut') return boundsOf([gh.A, gh.B], 8);
+    if (gh.kind === 'shape') return shapeBounds(gh.shape, gh.shape.width + 8);
     if (gh.kind === 'eraser') { const r = gh.size / 2 + 6; return { x: gh.x - r, y: gh.y - r, w: r * 2, h: r * 2 }; }
     return null;
+  }
+
+  // ---------- shapes tool (outline shapes that stay editable) ----------
+  /** Shape outlines, never over stickers (like ink). */
+  paintShapes(g, face, rect = null) {
+    const F = this.faces[face];
+    const s = ctx2d(this.scratch2);
+    s.save();
+    if (rect) { s.beginPath(); s.rect(rect.x, rect.y, rect.w, rect.h); s.clip(); } // only the part being redrawn
+    s.clearRect(0, 0, this.w, this.h);
+    for (const sh of F.shapes) drawShape(s, sh);
+    if (F.hasProtect) { s.globalCompositeOperation = 'destination-out'; s.drawImage(F.protect, 0, 0); }
+    s.restore();
+    g.drawImage(this.scratch2, 0, 0);
+  }
+  get handleR() { return 9 * this.handlePx; }
+  get handleGap() { return 30 * this.handlePx; }
+  /** Area of a face that a shape (with its handles) covers – redrawn when it changes. */
+  shapeRect(sh) { return shapeBounds(sh, sh.width + this.handleGap + this.handleR * 2 + 6); }
+  findShape(face, id) { return this.faces[face]?.shapes.find((x) => x.id === id) || null; }
+  selectedShape() { return this.selected ? this.findShape(this.selected.face, this.selected.id) : null; }
+  /** Topmost shape whose box contains p. */
+  shapeAt(face, p) {
+    const list = this.faces[face].shapes;
+    for (let i = list.length - 1; i >= 0; i--) if (handleAt(list[i], p, 0, 0, this.h) === 'move') return list[i];
+    return null;
+  }
+  /** Which handle of the selected shape is at p ('nw'…'w', 'rotate', 'move' or null). */
+  shapeHandleAt(face, p) {
+    const sh = this.selected?.face === face ? this.selectedShape() : null;
+    return sh ? handleAt(sh, p, this.handleR * 1.6, this.handleGap, this.h) : null;
+  }
+  selectShape(face, id) {
+    const old = this.selectedShape();
+    if (old) this.markFace(this.selected.face, this.shapeRect(old));
+    this.selected = id ? { face, id } : null;
+    const sh = this.selectedShape();
+    if (sh) this.markFace(face, this.shapeRect(sh));
+    this.emit();
+  }
+  addShape(face, spec) {
+    const F = this.faces[face];
+    this.record(face, null);
+    const sh = cleanShape({ ...spec, id: Math.random().toString(36).slice(2, 10) });
+    F.shapes.push(sh);
+    F.used = true; this.touched = true;
+    this.markFace(face, this.shapeRect(sh));
+    this.selectShape(face, sh.id);
+    return sh;
+  }
+  /**
+   * Changes a shape (move/resize/rotate/colour/thickness). `undo`: make an undo step first (once per drag);
+   * `quiet`: don't notify listeners (during a drag; call emit() when it ends).
+   */
+  updateShape(face, id, patch, { undo = false, quiet = false } = {}) {
+    const sh = this.findShape(face, id);
+    if (!sh) return;
+    if (undo) this.record(face, null);
+    this.markFace(face, this.shapeRect(sh));
+    Object.assign(sh, cleanShape({ ...sh, ...patch }));
+    this.markFace(face, this.shapeRect(sh));
+    if (!quiet) this.emit();
+  }
+  deleteShape(face, id) {
+    const F = this.faces[face], sh = this.findShape(face, id);
+    if (!sh) return false;
+    this.record(face, null);
+    F.shapes = F.shapes.filter((x) => x !== sh);
+    if (this.selected?.id === id) this.selected = null;
+    this.markFace(face, this.shapeRect(sh));
+    this.emit();
+    return true;
+  }
+  /** Dashed box + handles around the selected shape (on screen only, never saved or exported). */
+  paintHandles(g) {
+    const sh = this.selectedShape();
+    if (!sh) return;
+    const px = this.handlePx, hs = handlePositions(sh, this.handleGap, this.h);
+    const cs = hs.filter((h) => ['nw', 'ne', 'se', 'sw'].includes(h.id));
+    const rot = hs.find((h) => h.id === 'rotate');
+    const edge = hs.find((h) => h.id === (rot.below ? 's' : 'n'));
+    g.save();
+    g.globalCompositeOperation = 'source-over'; g.globalAlpha = 1;
+    g.lineWidth = 1.6 * px; g.strokeStyle = '#2b8a8a'; g.setLineDash([6 * px, 4 * px]);
+    g.beginPath(); cs.forEach((p, i) => (i ? g.lineTo(p.x, p.y) : g.moveTo(p.x, p.y))); g.closePath(); g.stroke();
+    g.setLineDash([]);
+    g.beginPath(); g.moveTo(edge.x, edge.y); g.lineTo(rot.x, rot.y); g.stroke();
+    for (const h of hs) {
+      g.fillStyle = h.id === 'rotate' ? '#2b8a8a' : '#ffffff';
+      g.beginPath();
+      if (h.id === 'rotate') g.arc(h.x, h.y, this.handleR * 1.1, 0, Math.PI * 2);
+      else g.rect(h.x - this.handleR * 0.8, h.y - this.handleR * 0.8, this.handleR * 1.6, this.handleR * 1.6);
+      g.fill(); g.stroke();
+    }
+    // a little turning arrow in the rotate handle
+    g.strokeStyle = '#fff'; g.lineWidth = 1.4 * px;
+    g.beginPath(); g.arc(rot.x, rot.y, this.handleR * 0.55, -Math.PI * 0.9, Math.PI * 0.5); g.stroke();
+    g.restore();
   }
 
   // ---------- cutting the card ----------
@@ -665,6 +794,7 @@ export class CardPaper {
       const blend = BLEND[live.tool];
       g.save(); g.globalCompositeOperation = blend.op; g.globalAlpha = blend.alpha * live.opts.opacity; g.drawImage(this.scratch, 0, 0); g.restore();
     }
+    if (F.shapes.length) this.paintShapes(g, face, rect);
     if (this.pendingTape && this.pendingTape.face === face) {
       const { S, E, width, pattern } = this.pendingTape;
       if (Math.hypot(E.x - S.x, E.y - S.y) > 2) paintTape(g, tapePolygon(S, E, width), S, Math.atan2(E.y - S.y, E.x - S.x), pattern, 0.97);
@@ -682,6 +812,7 @@ export class CardPaper {
       g.globalCompositeOperation = 'source-over';
     }
     if (this.choice) this.paintChoice(g, face, t);
+    if (this.selected?.face === face) this.paintHandles(g);
     if (this.cutting) {
       g.save();
       if (face === 'outside') { g.translate(this.w, 0); g.scale(-1, 1); }
@@ -710,6 +841,8 @@ export class CardPaper {
    */
   frame(t) {
     if (this.live?.stale) { this.live.stale = false; this.rerenderLive(); }
+    const snapped = this.checkHold();
+    if (snapped) this.onPerfect?.(snapped);
     const drawn = [];
     const now = performance.now();
     const sparkleTick = now - (this._lastSparkle || 0) > 90;
@@ -827,6 +960,8 @@ export class CardPaper {
       paintText(g, gh.spec, box.x, box.y, box.scale);
       g.save(); g.strokeStyle = 'rgba(42,157,143,.8)'; g.lineWidth = 2; g.setLineDash([8, 6]);
       g.strokeRect(box.x - box.w / 2, box.y - box.h / 2, box.w, box.h); g.restore();
+    } else if (gh.kind === 'shape') {
+      g.save(); g.globalAlpha = 0.6; drawShape(g, gh.shape); g.restore();
     } else if (gh.kind === 'tapecut') {
       g.save(); g.strokeStyle = '#e63946'; g.lineWidth = 2.5; g.setLineDash([10, 8]);
       g.beginPath(); g.moveTo(gh.A.x, gh.A.y); g.lineTo(gh.B.x, gh.B.y); g.stroke(); g.restore();
@@ -844,6 +979,7 @@ export class CardPaper {
     g.fillStyle = PAPER_COLOR; g.fillRect(0, 0, this.w, this.h);
     g.drawImage(F.objects, 0, 0);
     g.drawImage(F.ink, 0, 0);
+    if (F.shapes.length) this.paintShapes(g, face);
     this.paintSparkles(g, t, F.glitter);
     if (this.isCut) { this.paintCutShadow(g, face); g.globalCompositeOperation = 'destination-in'; this.drawCutShape(g, face); }
     return c;
@@ -928,7 +1064,8 @@ export class CardPaper {
       if (F.hasProtect) layers[k + 'Protect'] = png(F.protect);
     }
     if (this.isCut) layers.cut = png(this.cut);
-    return { image: png(this.flatFace('inside')), layers, texts: this.texts };
+    const shapes = FACES.flatMap((f) => this.faces[f].shapes.map((x) => ({ ...cleanShape(x), face: f })));
+    return { image: png(this.flatFace('inside')), layers, texts: this.texts, shapes };
   }
   thumbnail(maxW = 360) {
     const f = this.flatFace('inside', 0.3);
@@ -955,7 +1092,10 @@ export class CardPaper {
       F.hasProtect = !!(L[k + 'Protect'] || (id === 'inside' && design.mask));
       F.used = !!(L[k + 'Objects'] || L[k + 'Ink'] || (id === 'inside' && design.image));
       F.glitter = []; F.texts = [];
+      F.shapes = (design.shapes || []).filter((x) => x.face === id).map(cleanShape);
+      if (F.shapes.length) F.used = true;
     }
+    this.selected = null;
     this.faces.inside.texts = (design.texts || []).slice();
     const g = ctx2d(this.cut);
     if (L.cut) { g.clearRect(0, 0, this.w, this.h); g.drawImage(await loadImg(L.cut), 0, 0, this.w, this.h); this.isCut = true; }

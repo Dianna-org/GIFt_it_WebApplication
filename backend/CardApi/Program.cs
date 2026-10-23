@@ -131,6 +131,17 @@ string Uid(ClaimsPrincipal p) => p.FindFirstValue(ClaimTypes.NameIdentifier)!;
 var layerKeys = new HashSet<string> { "inObjects", "inInk", "inProtect", "outObjects", "outInk", "outProtect", "cut" };
 var cardSizes = new HashSet<string> { "a4", "a5", "a6", "square" };
 
+bool ValidShape(CardShape sh)
+{
+    bool Num(double v, double lo, double hi) => double.IsFinite(v) && v >= lo && v <= hi;
+    return (sh.Face == "inside" || sh.Face == "outside")
+        && System.Text.RegularExpressions.Regex.IsMatch(sh.Kind ?? "", "^[a-z0-9-]{1,24}$")
+        && (sh.Id ?? "").Length <= 24
+        && System.Text.RegularExpressions.Regex.IsMatch(sh.Color ?? "", "^#[0-9a-fA-F]{6}$")
+        && Num(sh.X, -20000, 20000) && Num(sh.Y, -20000, 20000) && Num(sh.W, 1, 20000) && Num(sh.H, 1, 20000)
+        && Num(sh.Rot, -10, 10) && Num(sh.Width, 1, 60);
+}
+
 IResult? Validate(DesignRequest r)
 {
     if (!cardSizes.Contains(r.CardSize ?? "")) return Results.BadRequest(new { error = "Unknown card size." });
@@ -142,6 +153,8 @@ IResult? Validate(DesignRequest r)
         return Results.BadRequest(new { error = "Invalid image data." });
     if (r.Mask is { Length: > 0 } && !r.Mask.StartsWith("data:image/png;base64,"))
         return Results.BadRequest(new { error = "Invalid mask data." });
+    if (r.Shapes != null && (r.Shapes.Count > 500 || r.Shapes.Any(sh => !ValidShape(sh))))
+        return Results.BadRequest(new { error = "Invalid shape data." });
     var title = r.Title?.Trim() ?? "";
     if (title.Length > 40) return Results.BadRequest(new { error = "Title is too long (40 characters max)." });
     if (ProfanityFilter.Contains(title))
@@ -177,7 +190,7 @@ designsApi.MapPost("/", async (DesignRequest r, ClaimsPrincipal p, IMongoCollect
     var d = new Design
     {
         UserId = uid, Title = r.Title?.Trim() ?? "", CardSize = r.CardSize, Background = r.Background,
-        Image = r.Image, Mask = r.Mask ?? "", Thumbnail = r.Thumbnail, Texts = r.Texts ?? new(), Layers = r.Layers ?? new(), Palette = r.Palette ?? new(), UpdatedAt = DateTime.UtcNow
+        Image = r.Image, Mask = r.Mask ?? "", Thumbnail = r.Thumbnail, Texts = r.Texts ?? new(), Layers = r.Layers ?? new(), Palette = r.Palette ?? new(), Shapes = r.Shapes ?? new(), UpdatedAt = DateTime.UtcNow
     };
     await designs.InsertOneAsync(d);
     return Results.Ok(new { id = d.Id, updatedAt = d.UpdatedAt });
@@ -193,7 +206,7 @@ designsApi.MapPut("/{id}", async (string id, DesignRequest r, ClaimsPrincipal p,
         Builders<Design>.Update
             .Set(d => d.Title, r.Title?.Trim() ?? "").Set(d => d.CardSize, r.CardSize).Set(d => d.Background, r.Background)
             .Set(d => d.Image, r.Image).Set(d => d.Mask, r.Mask ?? "").Set(d => d.Thumbnail, r.Thumbnail)
-            .Set(d => d.Texts, r.Texts ?? new()).Set(d => d.Layers, r.Layers ?? new()).Set(d => d.Palette, r.Palette ?? new()).Set(d => d.UpdatedAt, now));
+            .Set(d => d.Texts, r.Texts ?? new()).Set(d => d.Layers, r.Layers ?? new()).Set(d => d.Palette, r.Palette ?? new()).Set(d => d.Shapes, r.Shapes ?? new()).Set(d => d.UpdatedAt, now));
     return res.MatchedCount == 0 ? Results.NotFound() : Results.Ok(new { id, updatedAt = now });
 });
 
