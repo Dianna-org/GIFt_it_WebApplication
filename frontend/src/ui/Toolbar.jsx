@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useLayoutEffect, useRef, useState } from 'react';
 import { useStore } from '../store.js';
 import { DRAW_TOOLS, FONTS, PASTELS, TAPE_PATTERNS, TOOL_LABELS } from '../config.js';
 import { STICKERS, stickerCanvas } from '../engine/stickers.js';
@@ -10,10 +10,11 @@ import { ZoomControls } from './Zoom.jsx';
 import { heldToolId, putBackTool } from '../scene/Desk.jsx';
 import { SHAPES, drawShape } from '../engine/shapeLibrary.js';
 import { pointer } from '../scene/pointer.js';
+import { applyKbdHighlight, KEY_HELP } from './keys.js';
 
 function Slider({ label, value, min, max, onChange, suffix = '', hint }) {
   return (
-    <label className="slider">
+    <label className="slider" data-kbd="range">
       <span className="slider-label">{label}<b>{Math.round(value)}{suffix}</b></span>
       <input type="range" min={min} max={max} value={value} onChange={(e) => onChange(+e.target.value)} />
       {hint && <span className="slider-hint">{hint}</span>}
@@ -43,7 +44,7 @@ function ColorPalette() {
   };
 
   return (
-    <div className="palette-wrap">
+    <div className="palette-wrap" data-kbd="colors">
       <div className="palette" role="group" aria-label="My colours">
         <span className="palette-title">My colours</span>
         {myColors.map((c, i) => c ? (
@@ -91,7 +92,7 @@ function PatternOptions() {
   const setToolSetting = useStore((s) => s.setToolSetting);
   return (
     <>
-      <div className="patterns">
+      <div className="patterns" data-kbd="choice">
         {PATTERNS.map((p) => (
           <button key={p.id} className={'pat' + (t.pattern === p.id ? ' on' : '')} onClick={() => setToolSetting('pattern', { pattern: p.id })} title={p.label}>
             <PatternPreview id={p.id} color={color} rainbow={t.rainbow} />
@@ -99,7 +100,7 @@ function PatternOptions() {
           </button>
         ))}
       </div>
-      <div className="row">
+      <div className="row" data-kbd="choice">
         <button className={'chip wide-chip' + (!t.rainbow ? ' on' : '')} onClick={() => setToolSetting('pattern', { rainbow: false })}>My colour</button>
         <button className={'chip wide-chip' + (t.rainbow ? ' on' : '')} onClick={() => setToolSetting('pattern', { rainbow: true })}>🌈 Rainbow</button>
       </div>
@@ -166,7 +167,7 @@ function ShapeOptions() {
   const remove = () => { if (paper.deleteShape(paper.selected.face, sel.id)) useStore.getState().markDirty(); };
   return (
     <>
-      <div className="stickers shapes-grid">{SHAPES.map((d) => <ShapeButton key={d.id} def={d} />)}</div>
+      <div className="stickers shapes-grid" data-kbd="choice">{SHAPES.map((d) => <ShapeButton key={d.id} def={d} />)}</div>
       <Slider label="Line thickness" value={sel ? sel.width : t.width} min={2} max={40} onChange={setWidth} />
       {sel ? (
         <>
@@ -199,6 +200,8 @@ export function ToolOptions() {
   const paper = useStore((s) => s.paper);
   const cardHeld = useStore((s) => s.cardHeld);
   const panelHidden = useStore((s) => s.panelHidden);
+  useStore((s) => s.kbdRow + (s.kbdOn ? 1000 : 0)); // re-render (and re-apply the highlight) when it moves
+  useLayoutEffect(() => applyKbdHighlight()); // keyboard-chosen row keeps its frame after every render
   const [, force] = useState(0);
   useEffect(() => paper.onChange(() => force((n) => n + 1)), [paper]);
 
@@ -279,7 +282,7 @@ export function ToolOptions() {
 
       {tool === 'sticker' && (
         <>
-          <div className="stickers">{STICKERS.map((s) => <StickerButton key={s.id} id={s.id} />)}</div>
+          <div className="stickers" data-kbd="choice">{STICKERS.map((s) => <StickerButton key={s.id} id={s.id} />)}</div>
           <div className="grid3">
             <Slider label="Size" value={stickerSize} min={80} max={520} onChange={(v) => setSticker({ stickerSize: v })} />
             <Slider label="Rotation" value={stickerRot} min={-180} max={180} suffix="°" onChange={(v) => setSticker({ stickerRot: v })} />
@@ -294,7 +297,7 @@ export function ToolOptions() {
         <>
           <textarea rows={2} maxLength={200} value={textSpec.text} placeholder="Type your message…" onChange={(e) => setTextSpec({ text: e.target.value })} />
           <div className="row">
-            <select value={textSpec.family} onChange={(e) => setTextSpec({ family: e.target.value })} style={{ fontFamily: textSpec.family }}>
+            <select data-kbd="select" value={textSpec.family} onChange={(e) => setTextSpec({ family: e.target.value })} style={{ fontFamily: textSpec.family }}>
               {FONTS.map((f) => <option key={f.label} value={f.family} style={{ fontFamily: f.family }}>{f.label}</option>)}
             </select>
             <button className={'chip' + (textSpec.bold ? ' on' : '')} onClick={() => setTextSpec({ bold: !textSpec.bold })}><b>B</b></button>
@@ -341,6 +344,33 @@ function PopHead({ title, onClose }) {
     <div className="pop-head">
       <strong>{title}</strong>
       <button className="pop-close" onClick={onClose} title="Close (Esc)" aria-label={`Close ${title.toLowerCase()}`}>✕</button>
+    </div>
+  );
+}
+
+/** "⌨ Keys": every keyboard key the app understands, with a short explanation. */
+function KeysHelp() {
+  const { open, setOpen, ref } = usePopover();
+  return (
+    <div className="popwrap" ref={ref}>
+      <button className="btn" onClick={() => setOpen(!open)} title="Keyboard keys you can use">⌨ Keys</button>
+      {open && (
+        <div className="pop keys">
+          <PopHead title="Keyboard keys" onClose={() => setOpen(false)} />
+          <table className="keys-table">
+            <tbody>
+              {KEY_HELP.map((k, i) => (k.group
+                ? <tr key={i}><th colSpan={2}>{k.group}</th></tr>
+                : (
+                  <tr key={i}>
+                    <td className="keys-cell">{k.keys.map((x, j) => (x === '+' && j > 0 && j < k.keys.length - 1 ? <span key={j} className="plus">+</span> : <kbd key={j}>{x}</kbd>))}</td>
+                    <td>{k.text}</td>
+                  </tr>
+                )))}
+            </tbody>
+          </table>
+        </div>
+      )}
     </div>
   );
 }
@@ -451,6 +481,7 @@ export function TopBar() {
         <button className="btn" onClick={() => useStore.getState().putBackAll()} title="Every tool goes back to its usual place">🧹 Put all tools back</button>
         <ZoomControls />
         <BgPicker />
+        <KeysHelp />
       </div>
       <button className="menu-btn" onClick={() => setMenu(!menuOpen)} aria-label="Open menu" aria-expanded={menuOpen}>☰</button>
     </header>

@@ -1,3 +1,4 @@
+import { changeKbdRow, focusedKbdRow, moveKbdRow } from './ui/keys.js';
 import { useEffect } from 'react';
 import { Desk } from './scene/Desk.jsx';
 import { TopBar, ToolOptions, HoverLabel, Toast } from './ui/Toolbar.jsx';
@@ -16,7 +17,8 @@ export function App() {
 
   useEffect(() => {
     const key = (e) => {
-      if (e.target.closest?.('input, textarea, select')) return;
+      // typing in a text box or using a drop-down keeps its own keys (sliders and the colour wheel don't)
+      if (e.target.closest?.('textarea, select, input:not([type=range]):not([type=color])')) return;
       if (useStore.getState().dialog) return;
       const s = useStore.getState();
       // shapes tool: Delete removes the selected shape, Esc first just finishes editing it
@@ -31,11 +33,19 @@ export function App() {
       if (e.key === 'o') turnCardPage(-1);
       if (e.key === '+' || e.key === '=') s.zoomIn();
       if (e.key === '-' && s.zoom) s.zoomOut();
-      if (s.zoom && e.key.startsWith('Arrow')) { // look around the zoomed card
+      // W A S D and the arrows: zoomed in -> move around (Shift: tool settings instead);
+      // otherwise W/S (↑/↓) choose a setting in the tool panel and A/D (←/→) change it
+      const dir = { w: 'up', s: 'down', a: 'left', d: 'right', ArrowUp: 'up', ArrowDown: 'down', ArrowLeft: 'left', ArrowRight: 'right' }[e.key.length === 1 ? e.key.toLowerCase() : e.key];
+      if (dir && !e.ctrlKey && !e.metaKey && !e.altKey) {
         e.preventDefault();
-        const step = 1.2 / s.zoom, o = s.zoomOffset;
-        const d = { ArrowLeft: [-step, 0], ArrowRight: [step, 0], ArrowUp: [0, step], ArrowDown: [0, -step] }[e.key];
-        s.setZoomOffset({ x: o.x + d[0], y: o.y + d[1] });
+        focusedKbdRow(e.target); // a slider you clicked is the one the keys change
+        if (s.zoom && !e.shiftKey) {
+          const step = 1.2 / s.zoom, o = s.zoomOffset;
+          const d = { left: [-step, 0], right: [step, 0], up: [0, step], down: [0, -step] }[dir];
+          s.setZoomOffset({ x: o.x + d[0], y: o.y + d[1] });
+        } else if (dir === 'up' || dir === 'down') moveKbdRow(dir === 'up' ? -1 : 1);
+        else changeKbdRow(dir === 'left' ? -1 : 1);
+        return;
       }
       if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'z') { e.preventDefault(); if (s.paper.undo()) s.markDirty(); }
       if (e.key === 'q') s.turnCard('v', -15);

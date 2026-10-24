@@ -1,6 +1,6 @@
 CARD STUDIO – PROJECT NOTES (memory file for future sessions)
 ====================================================================
-Last updated: 2026-10-24 (round 20).   Location: /home/dia/Documents/MSA_WebApplication/PROJECT_NOTES.txt
+Last updated: 2026-10-24 (round 21).   Location: /home/dia/Documents/MSA_WebApplication/PROJECT_NOTES.txt
 Read this first before changing anything. Keep it up to date after every change round.
 
 --------------------------------------------------------------------
@@ -97,6 +97,7 @@ frontend/src/
   engine/patterns.js PATTERNS list + STAMPS (shape drawers) + stampPattern() + hslToHex() for the pattern pen.
   engine/fill.js   floodRegion() (paint-bucket flood fill) + growMask() – pure functions, unit-tested.
   engine/shapes.js recognizeShape() for "hold to perfect" (round 16) – pure, tests in engine/shapes.test.js.
+  ui/keys.js       keyboard control of the tool panel (W/S rows, A/D change) + KEY_HELP list (round 21).
   engine/shapeLibrary.js SHAPES (37 outline shapes for the Shapes tool, round 17) + drawShape + editing maths
                    (resizeShape, rotateShape, handleAt, boxFromDrag, defaultBox, cleanShape) – tests in
                    engine/shapeLibrary.test.js. (Not to be confused with shapes.js = hold-to-perfect.)
@@ -285,6 +286,20 @@ ZOOM (scene/zoom.js, Desk.jsx SplitRenderer, ui/Zoom.jsx)
   the same shape (straight line, circle, oval, triangle, square, rectangle, pentagon, hexagon, any polygon
   up to 8 corners, open zigzags). Toast "Perfect circle! Keep drawing to undo the snap, or lift the tool to
   keep it." Not for the eraser. Undo removes it like any stroke. Details in section 3.
+- Keyboard (round 21). "⌨ Keys" button (top bar, KeysHelp in Toolbar.jsx, a pop-up with ✕/Esc) lists every
+  key with a short explanation – the list is KEY_HELP in ui/keys.js: KEEP IT UP TO DATE when adding keys.
+  User's choices: W/S (↑/↓) choose a setting row in the tool panel (green frame, .kbd-focus), A/D (←/→)
+  change it; when zoomed in W A S D / arrows move the view and Shift + those keys work on the settings;
+  colours step ONLY through the saved "My colours" (toast if none are saved).
+  How: rows = elements in .options with data-kbd: "range" (every Slider label), "choice" (pattern grid,
+  My colour/Rainbow row, sticker grid, shapes grid – the button with class "on" is current; A/D click the
+  previous/next one, wrapping), "select" (text font) and "colors" (palette-wrap). Range step = max(1,
+  (max-min)/50); values are set with the native value setter + an 'input' event so React's onChange runs.
+  store.kbdRow / kbdOn (reset when the tool changes); the first W/S press only shows the frame; ToolOptions
+  re-applies the class after each render (useLayoutEffect). Pressing a key while a panel slider has focus
+  makes that slider the chosen row (focusedKbdRow). App.jsx key handler now ignores only text inputs,
+  textareas and selects (sliders and the colour wheel no longer swallow the keys). Q/E/O/H/+/−/Ctrl+Z as
+  before.
 - Hiding menus that cover the card (round 19): the tool panel at the bottom has "▾ Hide" (also on the "card
   is in pieces" panel); hidden, it becomes a small "▴ <tool> – show options" button in the bottom-left corner
   (store.panelHidden; the H key toggles it). Round 20 (user's rule): Hide only lasts while you use the tool
@@ -464,4 +479,13 @@ PERFORMANCE
    automatic tape/scissors switches), README. Verified in the browser: marker -> Hide -> pill "Marker – show
    options" -> picked up the crayon -> panel "Crayon" shown again; tape -> Hide -> pulled tape (scissors
    automatically) still hidden -> cut (tape again) still hidden -> Esc put it back -> panel shown. Tests: 51
+   frontend passed.
+21 (2026-10-24) Keyboard: "⌨ Keys" help button + W A S D / arrow keys (user request + answers: Shift
+   switches A/D to settings while zoomed in, W/S pick the setting, colours only from "My colours").
+   Files: ui/keys.js (new), ui/Toolbar.jsx (data-kbd on rows, highlight re-apply, KeysHelp pop-up),
+   App.jsx (W A S D / arrows routing, text-input check), store.js (kbdRow, kbdOn + reset on tool change),
+   styles.css (.kbd-focus, keys table), README. Verified in the browser: Keys pop-up lists everything (lone
+   "+" fixed to show as a key cap); marker: D/→ thicker, S then A less transparent, ↓↓ to My colours;
+   two saved colours: D/A switch between them; zoomed in: D×4 and S×3 moved the map's red frame right and
+   down without changing the thickness, Shift+↑ chose Thickness and Shift+D made it thicker. Tests: 51
    frontend passed.

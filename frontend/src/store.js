@@ -81,6 +81,8 @@ export const useStore = create((set, get) => ({
   toast: null,
   panelHidden: false, // the tool panel is folded away – only while the tool in the hand stays the same
   mapHidden: false,   // the zoom map is folded away
+  kbdRow: 0,          // tool panel row chosen with W/S (↑/↓) – see ui/keys.js
+  kbdOn: false,       // that row is highlighted (after the first W/A/S/D press)
   busy: false,
   hover: null,
   dialog: null, // in-app confirmation (browser confirm() popups can be blocked)
@@ -230,6 +232,7 @@ export const useStore = create((set, get) => ({
 useStore.subscribe((s, prev) => {
   if (s.sameJob) { useStore.setState({ sameJob: false }); return; }
   if (s.panelHidden && (s.tool !== prev.tool || s.tapePattern !== prev.tapePattern)) useStore.setState({ panelHidden: false });
+  if ((s.kbdRow || s.kbdOn) && s.tool !== prev.tool) useStore.setState({ kbdRow: 0, kbdOn: false }); // new tool: start at its first setting
 });
 useStore.setState({ paper: newPaper('a4') });
 if (import.meta.env.DEV) window.__store = useStore;
