@@ -143,8 +143,19 @@ if (typeof window !== 'undefined') {
 const shapeStyle = (s) => ({ kind: s.toolSettings.shapes.kind, color: s.color, width: s.toolSettings.shapes.width });
 const shapeGhostAt = (s, face, pt) => ({ kind: 'shape', face, shape: { ...shapeStyle(s), ...defaultBox(s.toolSettings.shapes.kind, pt.x, pt.y, DEFAULT_SHAPE_PX) } });
 
+// The text tool (round 22) works the same way: a placed text box can be clicked again to move it, resize it
+// (corners: bigger/smaller letters; sides: wider/narrower box, the words re-wrap; top/bottom: taller box),
+// rotate it, and change its words, font, size, colour, bold and italic in the panel.
+const objType = (tool) => (tool === 'text' ? 'text' : 'shape');
+function placeNewText(s, face, pt) {
+  const spec = { ...s.textSpec, color: s.color };
+  if (!spec.text.trim()) return;
+  if (containsProfanity(spec.text)) { s.showToast('That text contains words that are not allowed on cards.', 'error'); return; }
+  if (s.paper.placeText(face, spec, pt.x, pt.y)) { pointer.placedAt = performance.now(); s.markDirty(); }
+}
+
 function shapeDown(face, pt) {
-  const s = st(), paper = s.paper;
+  const s = st(), paper = s.paper, type = objType(s.tool);
   const h = paper.shapeHandleAt(face, pt);
   if (h) {
     const sh = paper.selectedShape();
@@ -152,15 +163,20 @@ function shapeDown(face, pt) {
     paper.setGhost(null);
     return;
   }
-  const hit = paper.shapeAt(face, pt);
+  const hit = paper.shapeAt(face, pt, type);
   if (hit) {
     paper.selectShape(face, hit.id);
     pointer.shapeEdit = { face, id: hit.id, h: 'move', s0: { ...hit }, p0: pt, moved: false };
     paper.setGhost(null);
     return;
   }
-  if (paper.selected) { paper.selectShape(null); paper.setGhost(shapeGhostAt(s, face, pt)); return; } // a click beside it: done editing
+  if (paper.selected) { // a click beside it: done editing
+    paper.selectShape(null);
+    if (type === 'shape') paper.setGhost(shapeGhostAt(s, face, pt));
+    return;
+  }
   if (!paper.isOnPaper(face, pt)) return;
+  if (type === 'text') { placeNewText(s, face, pt); paper.setGhost(null); return; }
   pointer.shapeCreate = { face, a: pt, dragging: false };
 }
 
@@ -173,7 +189,10 @@ function shapeMove(face, pt) {
     let next;
     if (e.h === 'move') next = { x: e.s0.x + pt.x - e.p0.x, y: e.s0.y + pt.y - e.p0.y };
     else if (e.h === 'rotate') next = rotateShape(e.s0, pt, { snap: pointer.shift });
-    else next = resizeShape(e.s0, e.h, pt, { keepRatio: pointer.shift });
+    else if (e.s0.kind === 'text' && e.h.length === 2) { // text corner: the letters grow with the box
+      next = resizeShape(e.s0, e.h, pt, { keepRatio: true });
+      next.size = e.s0.size * (next.w / e.s0.w);
+    } else next = resizeShape(e.s0, e.h, pt, { keepRatio: pointer.shift && e.s0.kind !== 'text' });
     paper.updateShape(face, e.id, next, { undo: !e.moved, quiet: true }); // one undo step per drag
     e.moved = true;
     document.body.style.cursor = e.h === 'rotate' ? 'grabbing' : SHAPE_CURSOR[e.h];
@@ -188,10 +207,20 @@ function shapeMove(face, pt) {
     return;
   }
   // hovering: the cursor shows what pressing would do; with nothing selected the shape follows the pointer
-  const h = paper.shapeHandleAt(face, pt) || (paper.shapeAt(face, pt) ? 'move' : null);
+  const type = objType(s.tool), what = type === 'text' ? 'text' : 'shape';
+  const h = paper.shapeHandleAt(face, pt) || (paper.shapeAt(face, pt, type) ? 'move' : null);
   document.body.style.cursor = h ? SHAPE_CURSOR[h] : '';
-  useStore.setState({ hover: h === 'rotate' ? 'Drag to rotate (Shift: 15° steps)' : h === 'move' ? (paper.selected ? 'Drag to move the shape' : 'Click to change this shape') : h ? 'Drag to make it bigger or smaller (Shift keeps the proportions)' : null });
-  if (pointer.shapeFromPanel || (!h && !paper.selected)) paper.setGhost(shapeGhostAt(s, face, pt));
+  const resizeHint = type === 'text'
+    ? (['nw', 'ne', 'se', 'sw'].includes(h) ? 'Drag to make the letters bigger or smaller' : h === 'e' || h === 'w' ? 'Drag to make the text box wider or narrower (the words wrap)' : 'Drag to make the text box taller or shorter')
+    : 'Drag to make it bigger or smaller (Shift keeps the proportions)';
+  useStore.setState({ hover: h === 'rotate' ? 'Drag to rotate (Shift: 15° steps)' : h === 'move' ? (paper.selected ? `Drag to move the ${what}` : `Click to change this ${what}`) : h ? resizeHint : null });
+  const free = !h && !paper.selected;
+  if (type === 'text') {
+    if (free && paper.isOnPaper(face, pt)) { paper.setGhost({ kind: 'text', face, spec: { ...s.textSpec, color: s.color }, x: pt.x, y: pt.y }); pointer.textGhost = { face, x: pt.x, y: pt.y }; }
+    else { if (paper.ghost) paper.setGhost(null); pointer.textGhost = null; }
+    return;
+  }
+  if (pointer.shapeFromPanel || free) paper.setGhost(shapeGhostAt(s, face, pt));
   else if (paper.ghost) paper.setGhost(null);
 }
 
@@ -225,7 +254,7 @@ function handleDown(face, pt) {
   if (paper.choice) { if (paper.chooseCutPiece(paper.pieceAt(face, pt))) s.markDirty(); return; }
   if (!tool) return;
   if (tool === 'scissors' && !paper.pendingTape) { deskRays = []; startCardCut(face, pt); return; }
-  if (tool === 'shapes') { shapeDown(face, pt); return; }
+  if (tool === 'shapes' || tool === 'text') { shapeDown(face, pt); return; }
   if (!paper.isOnPaper(face, pt)) return;
   if (DRAW_TOOLS[tool] || tool === 'eraser') {
     const t = s.toolSettings[tool];
@@ -256,11 +285,6 @@ function handleDown(face, pt) {
     paper.placeSticker(face, s.stickerId, pt.x, pt.y, s.stickerSize, (s.stickerRot * Math.PI) / 180);
     pointer.placedAt = performance.now();
     s.markDirty();
-  } else if (tool === 'text') {
-    const spec = { ...s.textSpec, color: s.color };
-    if (!spec.text.trim()) return;
-    if (containsProfanity(spec.text)) { s.showToast('That text contains words that are not allowed on cards.', 'error'); return; }
-    if (paper.placeText(face, spec, pt.x, pt.y)) { pointer.placedAt = performance.now(); s.markDirty(); }
   }
 }
 
@@ -273,7 +297,7 @@ function handleMove(face, pt) {
     else if (pointer.down) startCardCut(face, pt); // came in from the desk
     return;
   }
-  if (tool === 'shapes') { shapeMove(face, pt); return; }
+  if (tool === 'shapes' || tool === 'text') { shapeMove(face, pt); return; }
   const on = paper.isOnPaper(face, pt);
   if (!on) { handleLeave(); return; }
   if (DRAW_TOOLS[tool] || tool === 'eraser') {
@@ -286,9 +310,6 @@ function handleMove(face, pt) {
     if (pointer.drawing) paper.setGhost({ kind: 'tapecut', face, A: pointer.cutStart, B: pt });
   } else if (tool === 'sticker') {
     paper.setGhost({ kind: 'sticker', face, id: s.stickerId, x: pt.x, y: pt.y, size: s.stickerSize, rot: (s.stickerRot * Math.PI) / 180 });
-  } else if (tool === 'text') {
-    paper.setGhost({ kind: 'text', face, spec: { ...s.textSpec, color: s.color }, x: pt.x, y: pt.y });
-    pointer.textGhost = { face, x: pt.x, y: pt.y };
   }
 }
 
@@ -306,7 +327,7 @@ function handleUp() {
   pointer.drawing = false;
   pointer.pulling = false;
   if (!tool) return;
-  if (tool === 'shapes') { shapeUp(); return; }
+  if (tool === 'shapes' || tool === 'text') { shapeUp(); return; }
   if (DRAW_TOOLS[tool] || tool === 'eraser') {
     if (paper.live) { paper.endStroke(); s.markDirty(); }
   } else if (tool === 'tape' && wasDrawing && paper.pendingTape) {
@@ -443,7 +464,11 @@ export function Card() {
     return () => { paper.onPerfect = null; };
   }, [paper]);
   // putting the shapes tool away finishes editing the selected shape
-  useEffect(() => { if (tool !== 'shapes' && paper.selected) paper.selectShape(null); }, [tool, paper]);
+  useEffect(() => {
+    const sel = paper.selectedShape();
+    if (sel && objType(tool) !== (sel.kind === 'text' ? 'text' : 'shape')) paper.selectShape(null);
+    else if (sel && tool !== 'shapes' && tool !== 'text') paper.selectShape(null);
+  }, [tool, paper]);
   const d = cardDims(cardSize);
   const group = useRef();
   const halfW = d.worldW / 2;
@@ -540,7 +565,7 @@ export function Card() {
     if (s.cardHeld) tmpQ.premultiply(tilt);
     group.current.quaternion.slerp(tmpQ, k);
     group.current.position.lerp(s.cardHeld ? HELD_POS : FLAT_POS, k);
-    if (s.tool === 'shapes') {
+    if (s.tool === 'shapes' || s.tool === 'text') {
       // shape handles keep the same size on screen: how many canvas pixels one screen pixel is
       const f = paper.selected?.face || 'inside';
       const a = canvasToWorld(f, paper.w * 0.25, paper.h / 2).project(state.camera);

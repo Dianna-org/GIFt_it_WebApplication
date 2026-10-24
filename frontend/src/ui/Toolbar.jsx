@@ -10,6 +10,7 @@ import { ZoomControls } from './Zoom.jsx';
 import { heldToolId, putBackTool } from '../scene/Desk.jsx';
 import { SHAPES, drawShape } from '../engine/shapeLibrary.js';
 import { pointer } from '../scene/pointer.js';
+import { containsProfanity } from '../moderation.js';
 import { applyKbdHighlight, KEY_HELP } from './keys.js';
 
 function Slider({ label, value, min, max, onChange, suffix = '', hint }) {
@@ -150,6 +151,62 @@ function ShapeButton({ def }) {
 }
 
 let lastStyleEdit = { id: null, t: 0 };
+/** Change the selected shape / text box; quick changes in a row (typing, a slider drag) are one undo step. */
+function editSelected(patch) {
+  const paper = useStore.getState().paper, sel = paper.selectedShape();
+  if (!sel) return;
+  const now = performance.now(), fresh = lastStyleEdit.id !== sel.id || now - lastStyleEdit.t > 1500;
+  lastStyleEdit = { id: sel.id, t: now };
+  paper.updateShape(paper.selected.face, sel.id, patch, { undo: fresh });
+  useStore.getState().markDirty();
+}
+
+/**
+ * Text tool panel. Nothing selected: the text you are about to place. A text box on the card selected:
+ * the same controls change that text box (words, font, bold, italic, size, colour).
+ */
+function TextOptions() {
+  const textSpec = useStore((s) => s.textSpec);
+  const setTextSpec = useStore((s) => s.setTextSpec);
+  const paper = useStore((s) => s.paper);
+  const showToast = useStore((s) => s.showToast);
+  const sel = paper.selectedShape();
+  const v = sel || textSpec;
+  const set = (patch) => {
+    if (!sel) { setTextSpec(patch); return; }
+    if ('text' in patch) {
+      if (!patch.text.trim()) { showToast('A text box needs some words – use “🗑 Delete text” to remove it.', 'error'); return; }
+      if (containsProfanity(patch.text)) { showToast('That text contains words that are not allowed on cards.', 'error'); return; }
+    }
+    editSelected(patch);
+  };
+  const remove = () => { if (paper.deleteShape(paper.selected.face, sel.id)) useStore.getState().markDirty(); };
+  return (
+    <>
+      <textarea rows={2} maxLength={200} value={v.text} placeholder="Type your message…" onChange={(e) => set({ text: e.target.value })} />
+      <div className="row">
+        <select data-kbd="select" value={v.family} onChange={(e) => set({ family: e.target.value })} style={{ fontFamily: v.family }}>
+          {!FONTS.some((f) => f.family === v.family) && <option value={v.family}>Font</option>}
+          {FONTS.map((f) => <option key={f.label} value={f.family} style={{ fontFamily: f.family }}>{f.label}</option>)}
+        </select>
+        <button className={'chip' + (v.bold ? ' on' : '')} onClick={() => set({ bold: !v.bold })}><b>B</b></button>
+        <button className={'chip' + (v.italic ? ' on' : '')} onClick={() => set({ italic: !v.italic })}><i>I</i></button>
+      </div>
+      <Slider label="Text size" value={v.size} min={20} max={Math.max(400, Math.round(v.size))} onChange={(n) => set({ size: n })} />
+      {sel ? (
+        <>
+          <p className="muted"><b>Text box selected:</b> drag it to move it · corner handles make the letters bigger or smaller · side handles make the box wider or narrower (the words wrap) · top/bottom handles make it taller · the round handle rotates it. The words, font, size and colour above change it too.</p>
+          <div className="row">
+            <button className="chip wide-chip" onClick={() => paper.selectShape(null)}>✓ Done</button>
+            <button className="chip wide-chip" onClick={remove}>🗑 Delete text</button>
+          </div>
+        </>
+      ) : (
+        <p className="muted">Move over the card to preview exactly how it will look, then click to place it. Click a text on the card later to move, resize, rotate or change it.</p>
+      )}
+    </>
+  );
+}
 function ShapeOptions() {
   const t = useStore((s) => s.toolSettings.shapes);
   const setToolSetting = useStore((s) => s.setToolSetting);
@@ -194,8 +251,6 @@ export function ToolOptions() {
   const stickerSize = useStore((s) => s.stickerSize);
   const stickerRot = useStore((s) => s.stickerRot);
   const setSticker = useStore((s) => s.setSticker);
-  const textSpec = useStore((s) => s.textSpec);
-  const setTextSpec = useStore((s) => s.setTextSpec);
   const putBack = useStore((s) => s.putBack);
   const paper = useStore((s) => s.paper);
   const cardHeld = useStore((s) => s.cardHeld);
@@ -293,20 +348,7 @@ export function ToolOptions() {
 
       {tool === 'shapes' && <ShapeOptions />}
 
-      {tool === 'text' && (
-        <>
-          <textarea rows={2} maxLength={200} value={textSpec.text} placeholder="Type your message…" onChange={(e) => setTextSpec({ text: e.target.value })} />
-          <div className="row">
-            <select data-kbd="select" value={textSpec.family} onChange={(e) => setTextSpec({ family: e.target.value })} style={{ fontFamily: textSpec.family }}>
-              {FONTS.map((f) => <option key={f.label} value={f.family} style={{ fontFamily: f.family }}>{f.label}</option>)}
-            </select>
-            <button className={'chip' + (textSpec.bold ? ' on' : '')} onClick={() => setTextSpec({ bold: !textSpec.bold })}><b>B</b></button>
-            <button className={'chip' + (textSpec.italic ? ' on' : '')} onClick={() => setTextSpec({ italic: !textSpec.italic })}><i>I</i></button>
-          </div>
-          <Slider label="Text size" value={textSpec.size} min={20} max={400} onChange={(v) => setTextSpec({ size: v })} />
-          <p className="muted">Move over the card to preview exactly how it will look, then click to place it. It always stays inside the card.</p>
-        </>
-      )}
+      {tool === 'text' && <TextOptions />}
 
       {(draw || tool === 'text' || tool === 'picker' || tool === 'bucket' || tool === 'shapes' || !tool) && <ColorPalette />}
     </div>

@@ -139,7 +139,11 @@ bool ValidShape(CardShape sh)
         && (sh.Id ?? "").Length <= 24
         && System.Text.RegularExpressions.Regex.IsMatch(sh.Color ?? "", "^#[0-9a-fA-F]{6}$")
         && Num(sh.X, -20000, 20000) && Num(sh.Y, -20000, 20000) && Num(sh.W, 1, 20000) && Num(sh.H, 1, 20000)
-        && Num(sh.Rot, -10, 10) && Num(sh.Width, 1, 60);
+        && Num(sh.Rot, -10, 10) && Num(sh.Width, 1, 60)
+        && (sh.Kind != "text" || (
+            (sh.Text ?? "").Trim().Length is > 0 and <= 200 && !ProfanityFilter.Contains(sh.Text!)
+            && System.Text.RegularExpressions.Regex.IsMatch(sh.Family ?? "", "^[A-Za-z0-9 ,'\"-]{1,120}$")
+            && Num(sh.Size, 8, 2000)));
 }
 
 IResult? Validate(DesignRequest r)

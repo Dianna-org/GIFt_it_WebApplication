@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { SHAPES, flatten, resizeShape, rotateShape, boxFromDrag, defaultBox, handleAt, insideBox, cleanShape, shapeBounds } from './shapeLibrary.js';
+import { SHAPES, flatten, resizeShape, rotateShape, boxFromDrag, defaultBox, handleAt, insideBox, cleanShape, shapeBounds, wrapText, textLayout } from './shapeLibrary.js';
 
 describe('shapes tool library', () => {
   it('has many different shapes with unique ids', () => {
@@ -74,5 +74,31 @@ describe('editing a placed shape', () => {
   it('cleans saved data', () => {
     const c = cleanShape({ kind: 'nope', x: 'a', w: -5, color: 'red', width: 999 });
     expect(c.kind).toBe(SHAPES[0].id); expect(c.x).toBe(0); expect(c.w).toBe(16); expect(c.color).toBe('#333333'); expect(c.width).toBe(60);
+  });
+});
+
+describe('text boxes', () => {
+  const measure = (t) => t.length * 10; // every letter 10 px wide
+  it('wraps words to the box width like Word', () => {
+    expect(wrapText('Happy birthday to you', 120, measure)).toEqual(['Happy', 'birthday to', 'you']);
+    expect(wrapText('Happy birthday to you', 1000, measure)).toEqual(['Happy birthday to you']);
+  });
+  it('keeps new lines and breaks a word that is too long', () => {
+    expect(wrapText('Hi\nthere', 1000, measure)).toEqual(['Hi', 'there']);
+    expect(wrapText('Congratulations', 60, measure)).toEqual(['Congra', 'tulati', 'ons']);
+  });
+  it('the box needs room for all its lines', () => {
+    const l = textLayout({ text: 'Happy birthday to you', w: 132, size: 20 }, measure);
+    expect(l.lines.length).toBe(3);
+    expect(l.needH).toBeCloseTo(3 * 24 + 12);
+  });
+  it('a corner drag with Shift keeps the proportions (letters scale with the box)', () => {
+    const t = { kind: 'text', x: 100, y: 100, w: 200, h: 50, rot: 0 };
+    const r = resizeShape(t, 'se', { x: 300, y: 125 }, { keepRatio: true });
+    expect(r.w / r.h).toBeCloseTo(4);
+  });
+  it('cleans text boxes and keeps their fields', () => {
+    const c = cleanShape({ kind: 'text', text: 'Hi', family: 'Georgia, serif', size: 3, bold: 1, x: 5, y: 6, w: 100, h: 40, color: '#112233' });
+    expect(c).toMatchObject({ kind: 'text', text: 'Hi', family: 'Georgia, serif', size: 8, bold: true, italic: false, color: '#112233' });
   });
 });

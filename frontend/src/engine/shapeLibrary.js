@@ -308,12 +308,50 @@ export function defaultBox(kind, x, y, size) {
   return asp >= 1 ? { x, y, w: size, h: size / asp, rot: 0 } : { x, y, w: size * asp, h: size, rot: 0 };
 }
 
-/** Plain-data copy, validated (used for undo and for saving/loading). */
+/** Plain-data copy, validated (used for undo and for saving/loading). Text boxes are kind 'text'. */
 export function cleanShape(s) {
   const num = (v, d) => (Number.isFinite(+v) ? +v : d);
-  return {
-    id: String(s.id || Math.random().toString(36).slice(2, 10)).slice(0, 24), kind: shapeById(s.kind).id,
+  const base = {
+    id: String(s.id || Math.random().toString(36).slice(2, 10)).slice(0, 24), kind: s.kind === 'text' ? 'text' : shapeById(s.kind).id,
     x: num(s.x, 0), y: num(s.y, 0), w: Math.max(MIN_SHAPE, num(s.w, 100)), h: Math.max(MIN_SHAPE, num(s.h, 100)),
     rot: num(s.rot, 0), color: /^#[0-9a-fA-F]{6}$/.test(s.color) ? s.color : '#333333', width: Math.min(60, Math.max(1, num(s.width, 8))),
   };
+  if (base.kind !== 'text') return base;
+  return {
+    ...base, text: String(s.text ?? '').slice(0, 200), family: String(s.family || 'Arial, sans-serif').slice(0, 120),
+    size: Math.min(2000, Math.max(8, num(s.size, 120))), bold: !!s.bold, italic: !!s.italic,
+  };
+}
+
+// ---------- text boxes ----------
+export const TEXT_PAD = 6;
+export const textLineHeight = (size) => size * 1.2;
+/**
+ * Word wrap like Word: lines no wider than maxW (measured with `measure(str)` -> px), new lines kept,
+ * a single word longer than the line is broken up.
+ */
+export function wrapText(text, maxW, measure) {
+  const out = [];
+  for (const para of String(text).split('\n')) {
+    if (!para.trim()) { out.push(''); continue; }
+    let line = '';
+    for (let word of para.split(/ +/).filter(Boolean)) {
+      while (measure(word) > maxW && word.length > 1) {
+        let n = word.length - 1;
+        while (n > 1 && measure(word.slice(0, n)) > maxW) n--;
+        if (line) { out.push(line); line = ''; }
+        out.push(word.slice(0, n));
+        word = word.slice(n);
+      }
+      const t = line ? line + ' ' + word : word;
+      if (line && measure(t) > maxW) { out.push(line); line = word; } else line = t;
+    }
+    out.push(line);
+  }
+  return out;
+}
+/** Lines of a text box and the height they need (the box is at least that tall). */
+export function textLayout(t, measure) {
+  const lines = wrapText(t.text, Math.max(1, t.w - TEXT_PAD * 2), measure);
+  return { lines, lineH: textLineHeight(t.size), needH: lines.length * textLineHeight(t.size) + TEXT_PAD * 2 };
 }

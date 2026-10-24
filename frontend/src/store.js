@@ -133,7 +133,7 @@ export const useStore = create((set, get) => ({
   setColor: (color) => {
     set({ color });
     // with the shapes tool, a new colour also recolours the shape being edited
-    const s = get(), sel = s.tool === 'shapes' && s.paper.selected;
+    const s = get(), sel = (s.tool === 'shapes' || s.tool === 'text') && s.paper.selected;
     if (sel) { s.paper.updateShape(sel.face, sel.id, { color }, { undo: true }); set({ dirtySinceSave: true }); }
   },
   addMyColor: (color) => {

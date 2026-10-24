@@ -1,6 +1,6 @@
 CARD STUDIO – PROJECT NOTES (memory file for future sessions)
 ====================================================================
-Last updated: 2026-10-24 (round 21).   Location: /home/dia/Documents/MSA_WebApplication/PROJECT_NOTES.txt
+Last updated: 2026-10-24 (round 22).   Location: /home/dia/Documents/MSA_WebApplication/PROJECT_NOTES.txt
 Read this first before changing anything. Keep it up to date after every change round.
 
 --------------------------------------------------------------------
@@ -35,7 +35,7 @@ Read this first before changing anything. Keep it up to date after every change 
 - Tests:
       docker build --target test frontend     (Vitest, 16 tests, frontend/src/engine/geometry.test.js)
       docker build --target test backend      (xUnit, 15 tests, backend/CardApi.Tests/RulesTests.cs)
-      scripts/smoke-test.sh                   (20 end-to-end API checks against the running stack)
+      scripts/smoke-test.sh                   (23 end-to-end API checks against the running stack)
   NOTE: /api/auth/* is rate limited to 20 requests/min per IP -> running the smoke test twice in a row can
   fail the "portfolio is private" check with 401/429. Wait a minute. Not a bug.
 - Git: repo on branch main. User commits themselves or asks me ("Commit"). Commit attribution line:
@@ -286,6 +286,23 @@ ZOOM (scene/zoom.js, Desk.jsx SplitRenderer, ui/Zoom.jsx)
   the same shape (straight line, circle, oval, triangle, square, rectangle, pentagon, hexagon, any polygon
   up to 8 corners, open zigzags). Toast "Perfect circle! Keep drawing to undo the snap, or lift the tool to
   keep it." Not for the eraser. Undo removes it like any stroke. Details in section 3.
+- Editable text boxes (round 22). Placed text is no longer painted into the objects canvas: placeText()
+  adds a Face.shapes entry with kind 'text' {text, family, size, bold, italic, color, x, y, w, h, rot}, so it
+  reuses all shapes-tool machinery (selection, handles, move, rotate, Delete, undo, save/load). Drawn by
+  paintTextBox (in paintShapes, after the ink, never over stickers): lines = wrapText(text, w - 2*TEXT_PAD)
+  (shapeLibrary.js, Word-like wrap, breaks over-long words), centred in the box, rotated with it.
+  fitTextBox keeps h >= the lines' height and w >= about one letter. User's choices: Word-like resizing –
+  corner handles scale the letters with the box (size *= new w / old w, proportions kept), side handles
+  change the width (words re-wrap), top/bottom handles the height (text stays centred); and EVERYTHING stays
+  editable: with the text tool, clicking a text selects it and the panel (TextOptions in Toolbar.jsx)
+  edits that box – words (empty or profane words are refused with a toast), font, bold, italic, size slider,
+  colour (palette/wheel via store.setColor); "✓ Done"/click beside/Esc deselects (the panel then shows the
+  next text to place again), "🗑 Delete text"/Delete removes it. Quick edits within 1.5 s = one undo step
+  (editSelected). The text tool only picks texts, the shapes tool only shapes (shapeAt(face, p, type)).
+  paper.texts = old baked-in texts + text boxes' words (moderation); load() drops the box words from the
+  legacy list so they aren't duplicated. Server: CardShape has Text/Family/Size/Bold/Italic, ValidShape
+  checks them for kind "text" (1–200 chars, no profanity, family [A-Za-z0-9 ,'"-], size 8..2000).
+  Old saved cards keep their texts baked in (not editable).
 - Keyboard (round 21). "⌨ Keys" button (top bar, KeysHelp in Toolbar.jsx, a pop-up with ✕/Esc) lists every
   key with a short explanation – the list is KEY_HELP in ui/keys.js: KEEP IT UP TO DATE when adding keys.
   User's choices: W/S (↑/↓) choose a setting row in the tool panel (green frame, .kbd-focus), A/D (←/→)
@@ -489,3 +506,15 @@ PERFORMANCE
    two saved colours: D/A switch between them; zoomed in: D×4 and S×3 moved the map's red frame right and
    down without changing the thickness, Shift+↑ chose Thickness and Shift+D made it thicker. Tests: 51
    frontend passed.
+22 (2026-10-24) Text boxes stay editable after placing (user request; answers: Word-like resizing, edit
+   everything). Files: engine/shapeLibrary.js (cleanShape for kind 'text', TEXT_PAD, wrapText, textLayout),
+   engine/shapeLibrary.test.js (+5 tests: wrap, new lines + long words, needed height, corner keep-ratio,
+   cleaning), engine/paper.js (placeText -> text box object, textMeasure, fitTextBox, paintTextBox, texts
+   getter, shapeAt type filter, load de-duplication), scene/Card.jsx (text tool through shapeDown/Move/Up,
+   placeNewText, text corner scaling, hover hints, deselect rule), ui/Toolbar.jsx (TextOptions, editSelected),
+   store.js + App.jsx (colour / Delete / Esc also for text), backend Models.cs + Program.cs (text fields +
+   validation), scripts/smoke-test.sh (+3: text box saved, comes back, profane text box refused), README.
+   Verified in the browser: placed "Happy Birthday!" (selected with handles), right side handle narrower ->
+   two lines and a taller box, corner handle -> size 120 -> 175, round handle rotated it, panel changed the
+   words to "Happy Birthday Ana!", bold and Clean sans (3 lines), Done -> panel back to the next text,
+   clicking the text selected it again. Tests: 56 frontend, smoke 23 passed.

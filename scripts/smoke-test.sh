@@ -39,6 +39,10 @@ SHAPE='{"face":"inside","id":"s1","kind":"heart","x":300,"y":200,"w":180,"h":160
 check "shapes are saved"         '"id"' "$(curl -s -X PUT "$BASE/designs/$ID" -H "$H" -H "$AUTH" -d "$(body withshape hi | sed "s/}}\$/},\"shapes\":[$SHAPE]}/")")"
 check "shapes come back"         '"kind":"heart"' "$(curl -s "$BASE/designs/$ID" -H "$AUTH")"
 check "bad shape refused"        "Invalid shape" "$(curl -s -X POST "$BASE/designs" -H "$H" -H "$AUTH" -d "$(body bad hi | sed 's/}}$/},"shapes":[{"face":"top","kind":"x","w":1,"h":1,"color":"#000000","width":5}]}/')")"
+TBOX='{"face":"inside","id":"t1","kind":"text","x":400,"y":300,"w":300,"h":90,"rot":0.2,"color":"#1d4ed8","width":8,"text":"Happy birthday","family":"Georgia, \\"Times New Roman\\", serif","size":60,"bold":true,"italic":false}'
+check "text box saved"           '"id"' "$(curl -s -X PUT "$BASE/designs/$ID" -H "$H" -H "$AUTH" -d "$(body withtext hi | sed "s/}}\$/},\"shapes\":[$TBOX]}/")")"
+check "text box comes back"      '"text":"Happy birthday"' "$(curl -s "$BASE/designs/$ID" -H "$AUTH")"
+check "profane text box refused" "Invalid shape" "$(curl -s -X PUT "$BASE/designs/$ID" -H "$H" -H "$AUTH" -d "$(body withtext hi | sed "s/}}\$/},\"shapes\":[${TBOX/Happy birthday/what the fuck}]}/")")"
 check "saving again reuses slot" '"id"' "$(curl -s -X PUT "$BASE/designs/$ID" -H "$H" -H "$AUTH" -d "$(body renamed hello)")"
 check "still one slot used"      '"id":"'"$ID"'"' "$(curl -s "$BASE/designs" -H "$AUTH")"
 for i in $(seq 2 20); do curl -s -o /dev/null -X POST "$BASE/designs" -H "$H" -H "$AUTH" -d "$(body d$i hi)"; done

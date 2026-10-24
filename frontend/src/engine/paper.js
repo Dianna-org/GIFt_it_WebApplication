@@ -6,7 +6,7 @@ import { stickerCanvas } from './stickers.js';
 import { labelPieces } from './pieces.js';
 import { floodRegion, growMask } from './fill.js';
 import { recognizeShape } from './shapes.js';
-import { drawShape, shapeBounds, handleAt, handlePositions, cleanShape } from './shapeLibrary.js';
+import { drawShape, shapeBounds, handleAt, handlePositions, cleanShape, textLayout } from './shapeLibrary.js';
 
 // "Hold to perfect": keeping a drawing tool still (within HOLD_RADIUS px) for HOLD_MS at the end of a stroke
 // turns the wobbly drawing into the perfect version of the same shape. Moving on afterwards undoes the snap.
@@ -233,7 +233,11 @@ export class CardPaper {
   onChange(fn) { this.listeners.add(fn); return () => this.listeners.delete(fn); }
   emit() { this.dirty = true; this.listeners.forEach((f) => f()); }
   face(id) { return this.faces[id]; }
-  get texts() { return [...this.faces.inside.texts, ...this.faces.outside.texts]; }
+  /** Every text on the card (for moderation): old baked-in texts + the editable text boxes. */
+  get texts() {
+    const boxes = FACES.flatMap((f) => this.faces[f].shapes.filter((x) => x.kind === 'text').map((x) => x.text));
+    return [...this.faces.inside.texts, ...this.faces.outside.texts, ...boxes];
+  }
 
   // ---------- cut shape helpers ----------
   /** Inside-face coordinates for a point on a face. */
@@ -541,18 +545,36 @@ export class CardPaper {
     return this._sil[id];
   }
 
+  /**
+   * Puts a text box on the card (round 22: it stays an object, so it can be moved, resized, rotated and
+   * edited later – see paintTextBox). Starts at the size of the preview, fitted inside the card.
+   */
   placeText(face, spec, x, y) {
-    if (!spec.text || !spec.text.trim()) return false;
-    const F = this.faces[face];
+    if (!spec.text || !spec.text.trim()) return null;
     const box = placeTextBox(spec, x, y, this.w, this.h);
-    this.placeObject(face, { x: box.x - box.w / 2 - 8, y: box.y - box.h / 2 - 8, w: box.w + 16, h: box.h + 16 }, (g) => {
-      paintText(g, spec, box.x, box.y, box.scale);
-      // text can't be written over stickers either
-      if (F.hasProtect) { g.save(); g.globalCompositeOperation = 'destination-out'; g.drawImage(F.protect, 0, 0); g.restore(); }
+    return this.addShape(face, {
+      kind: 'text', text: spec.text, family: spec.family, size: spec.size * box.scale, bold: spec.bold, italic: spec.italic,
+      color: spec.color, x: box.x, y: box.y, w: box.w + 12, h: box.h, rot: 0, // +12: the lines never wrap at first
     });
-    F.texts.push(spec.text);
-    this.emit();
-    return true;
+  }
+  textMeasure(t) {
+    const c = measureText.ctx || (measureText.ctx = ctx2d(makeCanvas(1, 1)));
+    c.font = fontOf(t);
+    return (str) => c.measureText(str).width;
+  }
+  /** A text box is always tall enough for its lines (and wide enough for one letter). */
+  fitTextBox(t) {
+    t.w = Math.max(t.w, t.size * 0.9 + 12);
+    t.h = Math.max(t.h, textLayout(t, this.textMeasure(t)).needH);
+  }
+  /** Draws a text box: lines wrapped to its width, centred in the box, turned with it. */
+  paintTextBox(g, t) {
+    const { lines, lineH } = textLayout(t, this.textMeasure(t));
+    g.save();
+    g.translate(t.x, t.y); g.rotate(t.rot || 0);
+    g.font = fontOf(t); g.fillStyle = t.color; g.textAlign = 'center'; g.textBaseline = 'middle';
+    lines.forEach((l, i) => g.fillText(l, 0, (i - (lines.length - 1) / 2) * lineH));
+    g.restore();
   }
 
   setGhost(g) {
@@ -577,7 +599,7 @@ export class CardPaper {
     s.save();
     if (rect) { s.beginPath(); s.rect(rect.x, rect.y, rect.w, rect.h); s.clip(); } // only the part being redrawn
     s.clearRect(0, 0, this.w, this.h);
-    for (const sh of F.shapes) drawShape(s, sh);
+    for (const sh of F.shapes) (sh.kind === 'text' ? this.paintTextBox(s, sh) : drawShape(s, sh));
     if (F.hasProtect) { s.globalCompositeOperation = 'destination-out'; s.drawImage(F.protect, 0, 0); }
     s.restore();
     g.drawImage(this.scratch2, 0, 0);
@@ -589,9 +611,12 @@ export class CardPaper {
   findShape(face, id) { return this.faces[face]?.shapes.find((x) => x.id === id) || null; }
   selectedShape() { return this.selected ? this.findShape(this.selected.face, this.selected.id) : null; }
   /** Topmost shape whose box contains p. */
-  shapeAt(face, p) {
+  shapeAt(face, p, type = null) {
     const list = this.faces[face].shapes;
-    for (let i = list.length - 1; i >= 0; i--) if (handleAt(list[i], p, 0, 0, this.h) === 'move') return list[i];
+    for (let i = list.length - 1; i >= 0; i--) {
+      if (type && (list[i].kind === 'text') !== (type === 'text')) continue; // the text tool picks texts, the shapes tool shapes
+      if (handleAt(list[i], p, 0, 0, this.h) === 'move') return list[i];
+    }
     return null;
   }
   /** Which handle of the selected shape is at p ('nw'…'w', 'rotate', 'move' or null). */
@@ -611,6 +636,7 @@ export class CardPaper {
     const F = this.faces[face];
     this.record(face, null);
     const sh = cleanShape({ ...spec, id: Math.random().toString(36).slice(2, 10) });
+    if (sh.kind === 'text') this.fitTextBox(sh);
     F.shapes.push(sh);
     F.used = true; this.touched = true;
     this.markFace(face, this.shapeRect(sh));
@@ -627,6 +653,7 @@ export class CardPaper {
     if (undo) this.record(face, null);
     this.markFace(face, this.shapeRect(sh));
     Object.assign(sh, cleanShape({ ...sh, ...patch }));
+    if (sh.kind === 'text') this.fitTextBox(sh);
     this.markFace(face, this.shapeRect(sh));
     if (!quiet) this.emit();
   }
@@ -1096,7 +1123,10 @@ export class CardPaper {
       if (F.shapes.length) F.used = true;
     }
     this.selected = null;
-    this.faces.inside.texts = (design.texts || []).slice();
+    // design.texts also lists the text boxes' words (for the server's check) – keep only the old baked-in ones
+    const legacy = (design.texts || []).slice();
+    for (const x of design.shapes || []) if (x.kind === 'text') { const i = legacy.indexOf(x.text); if (i >= 0) legacy.splice(i, 1); }
+    this.faces.inside.texts = legacy;
     const g = ctx2d(this.cut);
     if (L.cut) { g.clearRect(0, 0, this.w, this.h); g.drawImage(await loadImg(L.cut), 0, 0, this.w, this.h); this.isCut = true; }
     else { g.fillStyle = '#000'; g.fillRect(0, 0, this.w, this.h); this.isCut = false; }

@@ -51,6 +51,12 @@ public class CardShape
     public double Rot { get; set; }
     public string Color { get; set; } = "#333333";
     public double Width { get; set; } = 8;
+    // text boxes (Kind "text") only
+    public string? Text { get; set; }
+    public string? Family { get; set; }
+    public double Size { get; set; }
+    public bool Bold { get; set; }
+    public bool Italic { get; set; }
 }
 
 public record RegisterRequest(string Email, string DisplayName, string Password, DateTime BirthDate);
