@@ -79,6 +79,8 @@ export const useStore = create((set, get) => ({
   menuOpen: false,
   panel: null, // 'auth' | 'portfolio' | 'export' | null
   toast: null,
+  panelHidden: false, // the tool panel is folded away – only while the tool in the hand stays the same
+  mapHidden: false,   // the zoom map is folded away
   busy: false,
   hover: null,
   dialog: null, // in-app confirmation (browser confirm() popups can be blocked)
@@ -221,5 +223,13 @@ export const useStore = create((set, get) => ({
     set({ user, token, designId: user ? get().designId : null });
   },
 }));
+
+// "▾ Hide" only hides the tool panel while you use the tool that is in your hand: as soon as you pick up
+// another tool (or put it back, or take another tape roll) the panel comes back.
+// (The automatic tape -> scissors -> tape switch while cutting a piece of tape is the same job: sameJob.)
+useStore.subscribe((s, prev) => {
+  if (s.sameJob) { useStore.setState({ sameJob: false }); return; }
+  if (s.panelHidden && (s.tool !== prev.tool || s.tapePattern !== prev.tapePattern)) useStore.setState({ panelHidden: false });
+});
 useStore.setState({ paper: newPaper('a4') });
 if (import.meta.env.DEV) window.__store = useStore;

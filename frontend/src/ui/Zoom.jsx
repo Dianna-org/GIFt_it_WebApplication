@@ -33,6 +33,7 @@ export function ZoomControls() {
  */
 export function ZoomOverlay() {
   const zoom = useStore((s) => s.zoom);
+  const mapHidden = useStore((s) => s.mapHidden);
   const dragging = useRef(false);
   if (!zoom) return null;
 
@@ -50,8 +51,12 @@ export function ZoomOverlay() {
   return (
     <>
       <div className="zoom-area" aria-hidden="true" />
-      <div className="zoom-map" title="Zoom map – the red frame is what you see. Click or drag to move around.">
-        <span className="zoom-map-title">Zoom map <small className="zoom-map-side" /></span>
+      <div className={'zoom-map' + (mapHidden ? ' folded' : '')} title={mapHidden ? 'Show the zoom map' : 'Zoom map – the red frame is what you see. Click or drag to move around.'}>
+        <span className="zoom-map-title">
+          {mapHidden
+            ? <button className="map-toggle" onClick={() => useStore.setState({ mapHidden: false })} aria-label="Show the zoom map">🗺 Map ▾</button>
+            : <>Zoom map <small className="zoom-map-side" /><button className="map-toggle hide" onClick={() => useStore.setState({ mapHidden: true })} title="Hide the map so it doesn't cover the card" aria-label="Hide the zoom map">▴ Hide</button></>}
+        </span>
         <canvas className="zoom-map-canvas" width={216} height={150}
           onPointerDown={(e) => { dragging.current = true; e.currentTarget.setPointerCapture(e.pointerId); lookAt(e); }}
           onPointerMove={(e) => { if (dragging.current) lookAt(e); }}

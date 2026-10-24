@@ -101,7 +101,7 @@ let blockers = { t: 0, rects: [] };
 function screenBlockers() {
   const now = performance.now();
   if (now - blockers.t > 200) {
-    const els = document.querySelectorAll('.options, .topbar .btn, .topbar .logo, .topbar .zoom-ctl, .menu-btn, .toast, .zoom-area');
+    const els = document.querySelectorAll('.options, .options-pill, .topbar .btn, .topbar .logo, .topbar .zoom-ctl, .menu-btn, .toast, .zoom-area');
     blockers = { t: now, rects: [...els].map((e) => e.getBoundingClientRect()).map((r) => ({ l: r.left - 6, r: r.right + 6, t: r.top - 6, b: r.bottom + 6 })) };
   }
   return blockers.rects;
@@ -783,7 +783,7 @@ function SplitRenderer() {
     gl.setViewport(0, 0, W, H);
     // the zoom map: a picture of the side you are looking at
     const mapCanvas = document.querySelector('.zoom-map-canvas');
-    if (mapCanvas && e > 0.5) drawZoomMap(mapCanvas, z.camera, s);
+    if (mapCanvas && mapCanvas.offsetParent && e > 0.5) drawZoomMap(mapCanvas, z.camera, s);
     if (s.zoom && (used.x !== s.zoomOffset.x || used.y !== s.zoomOffset.y)) useStore.setState({ zoomOffset: { x: used.x, y: used.y } });
   }, 1);
   return null;

@@ -170,3 +170,19 @@ textarea, select, .text, .form input { width: 100%; font: inherit; padding: 8px 
 .pat:hover { border-color: rgba(42, 157, 143, 0.5); }
 .chip.wide-chip { padding: 6px 12px; font-weight: 700; }
 body.zoom-panning, body.zoom-panning .desk canvas { cursor: grabbing !important; }
+
+/* hiding menus that cover the card (round 19) */
+.hide-btn { border: 1px solid var(--line); background: #fff; border-radius: 999px; padding: 3px 10px; font-size: 12px; font-weight: 800; color: var(--muted); margin-left: 10px; }
+.hide-btn:hover { background: var(--accent); color: var(--accent-ink); border-color: var(--accent); }
+.options-pill { position: fixed; left: 14px; bottom: 14px; z-index: 4; border: 1px solid var(--line); background: var(--panel); border-radius: 999px; padding: 8px 14px; font-weight: 800; box-shadow: 0 4px 16px rgba(60, 40, 0, 0.18); }
+.options-pill:hover { background: var(--accent); color: var(--accent-ink); }
+.pop-head { display: flex; justify-content: space-between; align-items: center; margin: -2px 0 8px; gap: 10px; }
+.pop-close { width: 28px; height: 28px; border-radius: 50%; border: 1px solid var(--line); background: #fff; font-size: 13px; line-height: 1; }
+.pop-close:hover { background: var(--accent); color: var(--accent-ink); }
+.zoom-map-title { display: flex; align-items: center; gap: 4px; }
+.map-toggle { margin-left: auto; border: 1px solid var(--line); background: #fff; border-radius: 999px; padding: 1px 8px; font-size: 11px; font-weight: 800; text-transform: none; letter-spacing: 0; color: var(--ink); }
+.map-toggle:hover { background: var(--accent); color: var(--accent-ink); }
+.zoom-map.folded { width: auto; padding: 4px; }
+.zoom-map.folded .zoom-map-title { margin: 0; }
+.zoom-map.folded .map-toggle { margin-left: 0; font-size: 13px; padding: 4px 10px; }
+.zoom-map.folded .zoom-map-canvas { display: none; }

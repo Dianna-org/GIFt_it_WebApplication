@@ -198,16 +198,28 @@ export function ToolOptions() {
   const putBack = useStore((s) => s.putBack);
   const paper = useStore((s) => s.paper);
   const cardHeld = useStore((s) => s.cardHeld);
+  const panelHidden = useStore((s) => s.panelHidden);
   const [, force] = useState(0);
   useEffect(() => paper.onChange(() => force((n) => n + 1)), [paper]);
 
   const draw = tool && DRAW_TOOLS[tool];
   const t = draw ? settings[tool] : null;
 
+  const title = paper.choice ? '✂ Choose a piece' : tool ? TOOL_LABELS[tool] : cardHeld ? 'Holding the card' : 'Tools';
+  if (panelHidden) {
+    // folded away: only a small button in the corner, so the whole card can be used
+    return (
+      <button className="options-pill" onClick={() => useStore.setState({ panelHidden: false })} title="Show the panel again (H)">
+        ▴ {title} – show options
+      </button>
+    );
+  }
+  const hideBtn = <button className="hide-btn" onClick={() => useStore.setState({ panelHidden: true })} title="Hide this panel so it doesn't cover the card (H)" aria-label="Hide the panel">▾ Hide</button>;
+
   if (paper.choice) {
     return (
       <div className="options choice">
-        <strong>✂ The card is in {paper.choice.pieces.length} pieces</strong>
+        <div className="options-head"><strong>✂ The card is in {paper.choice.pieces.length} pieces</strong>{hideBtn}</div>
         <p className="muted">Click the piece you want to keep – the other pieces fall away. Undo puts them back.</p>
       </div>
     );
@@ -220,8 +232,9 @@ export function ToolOptions() {
         <span className="head-actions">
           {tool && tool !== 'picker' && <button className="link" onClick={() => putBackTool(heldToolId(useStore.getState()))}>Put it back (Esc)</button>}
           {tool === 'picker' && <button className="link" onClick={() => useStore.getState().clearTool()}>Cancel (Esc)</button>}
+          {!tool && cardHeld && <button className="link" onClick={putCardDown}>Put the card down</button>}
+          {hideBtn}
         </span>
-        {!tool && cardHeld && <button className="link" onClick={putCardDown}>Put the card down</button>}
       </div>
 
       {!tool && !cardHeld && <p className="muted">Press on a crayon, marker, tape, stickers… and drag straight onto the card, or click it and then draw. Click the desk to leave a tool there. Drag the card sideways to open or close it, from either side; click the card to pick it up and turn it.</p>}
@@ -313,10 +326,23 @@ function usePopover() {
   const ref = useRef();
   useEffect(() => {
     const close = (e) => { if (ref.current && !ref.current.contains(e.target)) setOpen(false); };
+    // Esc closes an open pop-up (and only that – the tool in your hand stays)
+    const key = (e) => { if (e.key === 'Escape' && ref.current?.querySelector('.pop')) { e.stopImmediatePropagation(); setOpen(false); } };
     window.addEventListener('pointerdown', close);
-    return () => window.removeEventListener('pointerdown', close);
+    window.addEventListener('keydown', key, true);
+    return () => { window.removeEventListener('pointerdown', close); window.removeEventListener('keydown', key, true); };
   }, []);
   return { open, setOpen, ref };
+}
+
+/** Title row of a pop-up with a ✕ that closes it (pop-ups can cover the card). */
+function PopHead({ title, onClose }) {
+  return (
+    <div className="pop-head">
+      <strong>{title}</strong>
+      <button className="pop-close" onClick={onClose} title="Close (Esc)" aria-label={`Close ${title.toLowerCase()}`}>✕</button>
+    </div>
+  );
 }
 
 function BgPicker() {
@@ -330,6 +356,7 @@ function BgPicker() {
       </button>
       {open && (
         <div className="pop">
+          <PopHead title="Background colour" onClose={() => setOpen(false)} />
           <div className="pop-grid">
             {PASTELS.map((p) => (
               <button key={p.color} className={'swatch' + (p.color === bg ? ' on' : '')} style={{ background: p.color }}
@@ -366,6 +393,7 @@ function TurnCard() {
       <button className="btn" onClick={() => setOpen(!open)} title="Turn the card">⟳ Turn card</button>
       {open && (
         <div className="pop turn">
+          <PopHead title="Turn the card" onClose={() => setOpen(false)} />
           {AXES.map((a) => (
             <div key={a.id} className="axis">
               <span className="axis-label">{a.label}<small>{a.hint}</small></span>

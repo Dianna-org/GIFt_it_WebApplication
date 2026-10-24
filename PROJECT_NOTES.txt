@@ -1,6 +1,6 @@
 CARD STUDIO – PROJECT NOTES (memory file for future sessions)
 ====================================================================
-Last updated: 2026-10-23 (round 18).   Location: /home/dia/Documents/MSA_WebApplication/PROJECT_NOTES.txt
+Last updated: 2026-10-24 (round 20).   Location: /home/dia/Documents/MSA_WebApplication/PROJECT_NOTES.txt
 Read this first before changing anything. Keep it up to date after every change round.
 
 --------------------------------------------------------------------
@@ -285,6 +285,18 @@ ZOOM (scene/zoom.js, Desk.jsx SplitRenderer, ui/Zoom.jsx)
   the same shape (straight line, circle, oval, triangle, square, rectangle, pentagon, hexagon, any polygon
   up to 8 corners, open zigzags). Toast "Perfect circle! Keep drawing to undo the snap, or lift the tool to
   keep it." Not for the eraser. Undo removes it like any stroke. Details in section 3.
+- Hiding menus that cover the card (round 19): the tool panel at the bottom has "▾ Hide" (also on the "card
+  is in pieces" panel); hidden, it becomes a small "▴ <tool> – show options" button in the bottom-left corner
+  (store.panelHidden; the H key toggles it). Round 20 (user's rule): Hide only lasts while you use the tool
+  that is in your hand – picking up another tool, another tape roll, putting the tool back or taking it again
+  shows the panel again (store.js useStore.subscribe resets panelHidden when tool/tapePattern change). The
+  automatic tape -> scissors -> tape switch while cutting a piece of tape is the same job and keeps it hidden
+  (Card.jsx passes sameJob: true with those two setState calls; the subscriber clears the flag).
+  The "Turn card" and "Background" pop-ups have a title row with a ✕ (PopHead in Toolbar.jsx), and Esc closes
+  an open pop-up only (capture-phase keydown in usePopover with stopImmediatePropagation, so the tool in the
+  hand is NOT put back). The zoom map has "▴ Hide" -> folds to a "🗺 Map ▾" button (store.mapHidden,
+  .zoom-map.folded; the map isn't redrawn while folded – Desk.jsx checks mapCanvas.offsetParent). The side
+  menu (☰) already had ✕. .options-pill counts as a screen blocker for putting tools down.
 - Shapes tool (round 17, "like in Word"): a see-through teal plastic stencil on the desk (heart, star,
   circle, triangle, square, hexagon cut-outs; DEFS id 'shapes', kind 'pad', home [-5.5, -3.35]; an invisible
   plate makes the cut-outs clickable). The panel shows 37 shapes: square, rectangle, rounded rectangle,
@@ -437,3 +449,19 @@ PERFORMANCE
    jumps there at once when it arrives on the card (no slow slide), then follows smoothly. Verified in the
    browser with real clicks: cake sticker at 125° on a straight card, on a card turned 45° and on the back
    of a flipped card – preview and stuck sticker identical every time. Tests: 51 frontend passed.
+19 (2026-10-24) Menus covering the card (ToolMenuCoveringCard.png: the pattern pen panel covered the lower
+   half of the card, so it couldn't be drawn on). Added a hide/close button to every menu that can cover the
+   card: tool panel "▾ Hide" + corner "show options" button + H key, ✕ on the Turn card and Background
+   pop-ups (+ Esc), "▴ Hide" on the zoom map. Files: store.js (panelHidden, mapHidden), ui/Toolbar.jsx
+   (hide button, options pill, PopHead, Esc in usePopover), ui/Zoom.jsx (map toggle), App.jsx (H key),
+   scene/Desk.jsx (skip drawing a folded map; .options-pill as blocker), styles.css, README. Verified in the
+   browser: pattern pen panel hidden -> drew hearts where it had been, pill shows "Pattern pen – show
+   options"; Turn card ✕ closes it; Background pop-up closes with Esc while the pen stays in the hand; zoom
+   map hides to a 42 px button and comes back with its picture. Tests: 51 frontend passed.
+20 (2026-10-24) Tool panel "▾ Hide" now only hides the panel for the tool in your hand (user request); taking
+   another tool brings the panel back. The zoom map's Hide stays as it was (user likes it). Files: store.js
+   (subscriber that resets panelHidden on a tool change, sameJob exception), scene/Card.jsx (sameJob on the
+   automatic tape/scissors switches), README. Verified in the browser: marker -> Hide -> pill "Marker – show
+   options" -> picked up the crayon -> panel "Crayon" shown again; tape -> Hide -> pulled tape (scissors
+   automatically) still hidden -> cut (tape again) still hidden -> Esc put it back -> panel shown. Tests: 51
+   frontend passed.

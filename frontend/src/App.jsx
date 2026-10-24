@@ -27,6 +27,7 @@ export function App() {
       }
       if (e.key === 'Escape' && s.tool === 'shapes' && s.paper.selected) { s.paper.selectShape(null); return; }
       if (e.key === 'Escape') { if (s.tool) putBackTool(heldToolId(s)); else s.clearTool(); s.setMenu(false); if (s.cardHeld) putCardDown(); }
+      if (e.key === 'h' || e.key === 'H') useStore.setState({ panelHidden: !s.panelHidden }); // hide / show the tool panel
       if (e.key === 'o') turnCardPage(-1);
       if (e.key === '+' || e.key === '=') s.zoomIn();
       if (e.key === '-' && s.zoom) s.zoomOut();

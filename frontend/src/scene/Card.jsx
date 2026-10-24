@@ -127,7 +127,7 @@ function finishTapeCut() {
   if (!poly) { s.showToast('Cut across the tape, not along it.', 'error'); return; }
   paper.placeTape(pt.face, poly, pt.S, Math.atan2(pt.E.y - pt.S.y, pt.E.x - pt.S.x), pt.pattern);
   s.markDirty();
-  useStore.setState({ tool: 'tape' }); // the scissors go back, the roll goes back
+  useStore.setState({ tool: 'tape', sameJob: true }); // the scissors go back, the roll goes back
 }
 
 // ---------------------------------------------------------------- shapes tool
@@ -315,7 +315,7 @@ function handleUp() {
     // the roll stays at the end of the tape until the piece is cut
     const a = canvasToWorld(face, S.x, S.y), b = canvasToWorld(face, E.x, E.y);
     pointer.tapeEnd = b; pointer.tapeDir = b.clone().sub(a).normalize();
-    useStore.setState({ tool: 'scissors' });
+    useStore.setState({ tool: 'scissors', sameJob: true });
     s.showToast('Now drag the scissors across the tape to cut it.');
   } else if (tool === 'scissors' && paper.pendingTape && wasDrawing) {
     finishTapeCut();
