@@ -1,6 +1,6 @@
 GIFt it! (formerly Card Studio) – PROJECT NOTES (memory file for future sessions)
 ====================================================================
-Last updated: 2026-10-26 (round 31).   Location: /home/dia/Documents/MSA_WebApplication/PROJECT_NOTES.txt
+Last updated: 2026-10-26 (round 33).   Location: /home/dia/Documents/MSA_WebApplication/PROJECT_NOTES.txt
 Read this first before changing anything. Keep it up to date after every change round.
 
 --------------------------------------------------------------------
@@ -314,6 +314,34 @@ ZOOM (scene/zoom.js, Desk.jsx SplitRenderer, ui/Zoom.jsx)
   legacy list so they aren't duplicated. Server: CardShape has Text/Family/Size/Bold/Italic, ValidShape
   checks them for kind "text" (1–200 chars, no profanity, family [A-Za-z0-9 ,'"-], size 8..2000).
   Old saved cards keep their texts baked in (not editable).
+- Paper strips + rubber stamp (round 33) for display name, email and password in BOTH Log in and Create
+  account (user's choices): ui/PaperField.jsx + ui/stampText.js (+ PaperField.test.js), styles .strip*,
+  .ink, .stamper. Each field is a long strip of paper (torn zig-zag ends via clip-path, slight tilt, a ruled
+  line, label in small caps), you write on it in blue handwriting (Caveat). When you LEAVE the strip (Enter
+  -> goes to the next strip instead of sending the form, Tab, or clicking elsewhere) a CSS-drawn rubber stamp
+  (wooden handle + black base) comes down and the strip is stamped in red ink (Special Elite font, border,
+  -2.5° tilt) with EXACTLY the text (no upper-casing – emails/passwords keep their case). Clicking a stamped
+  strip (or tabbing into it) lets you write it again; it is stamped again when you leave. Password: "👁 Show" /
+  "🙈 Hide" – shown -> the stamp prints the password, hidden -> one dot per character (stampText); toggling
+  re-stamps. The real <input> stays in the form (required/minLength validation, autocomplete, password
+  managers; autofilled values are stamped too) and is only invisible while the stamp is shown. Strips have
+  keys (name/email/password) so switching Log in <-> Create account keeps the right state. Fonts from npm
+  (@fontsource/special-elite + caveat), bundled. .form input styles are overridden by .form .strip-input.
+- Birth date picker (round 32) = a tear-off calendar page like the user's ChooseDate.jpeg (ui/DatePicker.jsx,
+  ui/dateLogic.js + dateLogic.test.js, styles .tearcal/.tc-*): paper background, small "DATE OF BIRTH" label
+  top left, "MONTH / YEAR" big in the top-right corner – click the month (grid of 12, later months of this
+  year disabled) or the year (list 1900..this year, opens at the shown year); big dates (Oswald 700) with the
+  2-letter weekday next to them, thin lines between rows, a fold line at the top. 7 dates per page = days
+  1-7, 8-14, 15-21, 22-28, 29-end, so each page has every day of the week once (last page keeps empty lines).
+  Turn pages with "‹ Previous page" / "Next page ›" (also the arrow keys, PageUp/PageDown, the mouse wheel);
+  past the last page it goes on to the next month and back. A page turns like a wall calendar: it lifts up
+  over the top (rotateX animation 0.48 s, clipped to the calendar). Click a date -> red number + red weekday
+  + handwritten "my birthday! 🎂" (Caveat) + "Born on Tuesday, 25 March 2008" under the calendar. Days after
+  today are greyed out. value/onChange = 'YYYY-MM-DD' (what the server already expects). Fonts Oswald +
+  Caveat come from npm (@fontsource/oswald, @fontsource/caveat – free OFL fonts, bundled, work offline;
+  Google Fonts links were tried first but the fonts didn't load in the test browser). The age >= 14 check is
+  unchanged (client + server). App.jsx: W A S D / arrows are ignored by the app while a window or page is
+  open (store.panel), so they don't move the tool panel highlight while you use the calendar.
 - Keyboard (round 21). "⌨ Keys" button (top bar, KeysHelp in Toolbar.jsx, a pop-up with ✕/Esc) lists every
   key with a short explanation – the list is KEY_HELP in ui/keys.js: KEEP IT UP TO DATE when adding keys.
   User's choices: W/S (↑/↓) choose a setting row in the tool panel (green frame, .kbd-focus), A/D (←/→)
@@ -621,3 +649,28 @@ PERFORMANCE
    (test account Diana Tester) badge gone, logo further in, menu account box with initial + 📷, a picture fed
    into the photo chooser -> "Your profile photo is changed.", 256x256 round photo, in the portfolio header,
    still there after reload, "Remove photo" -> initial again. Tests: 56 frontend passed.
+32 (2026-10-26) New birth date picker in "Create your account", looking like the user's ChooseDate.jpeg (user
+   request: year and month chosen in the corner, days chosen by turning pages of 7 dates). Files:
+   ui/DatePicker.jsx (new), ui/dateLogic.js (new) + ui/dateLogic.test.js (new, 5 tests: month lengths incl.
+   leap years, 7 days per page with every weekday once, weekday names (25 March 2024 = Monday, like the
+   picture), ISO conversion, no future dates), ui/Modals.jsx (AuthModal uses it instead of <input type=date>),
+   styles.css (.tearcal…, .form .field), App.jsx (no tool keys while a window is open), package.json +
+   package-lock.json (@fontsource/oswald, @fontsource/caveat), README. Problems found and fixed while testing:
+   fonts from Google didn't load in the test browser -> bundled from npm; label wrapped -> "Date of birth";
+   the turning page made the window scroll sideways -> the calendar clips it. Verified in the browser: year
+   list -> 2008, month grid -> March, three page turns to 22-28, clicked 25 -> red + note + "Born on Tuesday,
+   25 March 2008"; signed up a test account (Calendar Tester, caltest…@test.local – still in the local
+   database) and the server saved BirthDate 2008-03-25; this year Nov/Dec disabled and 27-28 Oct greyed out
+   (today 26 Oct); a 2015 birthday -> "You must be at least 14 years old…". Tests: 61 frontend passed.
+33 (2026-10-26) Display name / email / password as paper strips that get stamped (user request; answers:
+   stamp when the user leaves the strip, in Log in AND Create account). Files: ui/PaperField.jsx (new),
+   ui/stampText.js (new), ui/PaperField.test.js (new, 3 tests: exact text, hidden password = one dot per
+   character incl. emoji, shown password as it is), ui/Modals.jsx (AuthModal uses PaperField; setV),
+   styles.css (strips, ink, stamper animation), package.json/package-lock.json (@fontsource/special-elite),
+   README. Fixed while testing: the general ".form input" style overrode the strip font/padding (made the
+   strip selector more specific). Verified in the browser with real typing: "Ana Maria" handwritten -> Tab ->
+   stamped "Ana Maria"; email + Enter -> stamp + focus moved to the password (form not sent); password
+   stamped as 9 dots, Show -> stamped "Cake2026!", Hide -> dots again; clicking a stamped strip -> writing
+   again; Log in window has the strips too; a test sign-up through the strips worked ("Welcome, Stamp Tester!"
+   – that test account stays in the local database). Note: clicking outside the window still closes it and
+   forgets what was written (as before). Tests: 64 frontend passed.

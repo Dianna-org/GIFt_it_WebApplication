@@ -123,6 +123,8 @@ textarea, select, .text, .form input { width: 100%; font: inherit; padding: 8px 
 .form { display: grid; gap: 12px; }
 .form label { display: grid; gap: 4px; font-weight: 700; font-size: 14px; }
 .form small { font-weight: 400; color: var(--muted); }
+.form .field { display: grid; gap: 4px; }
+.form .field-label { font-weight: 700; font-size: 14px; }
 .portfolio { display: grid; grid-template-columns: repeat(auto-fill, minmax(300px, 1fr)); gap: 22px; }
 .slot { margin: 0; background: #fff; border: 1px solid var(--line); border-radius: 18px; overflow: hidden; display: flex; flex-direction: column; box-shadow: 0 6px 20px rgba(60, 40, 0, 0.1); transition: transform 0.15s ease, box-shadow 0.15s ease; }
 .slot:hover { transform: translateY(-3px); box-shadow: 0 12px 28px rgba(60, 40, 0, 0.16); }
@@ -249,3 +251,76 @@ body.zoom-panning, body.zoom-panning .desk canvas { cursor: grabbing !important;
 @media (max-width: 720px) {
   .corner { margin: 10px 16px 0 auto; }
 }
+
+/* ---------- tear-off calendar birth date picker (round 32, looks like the user's ChooseDate.jpeg) ---------- */
+.tearcal { --paper: #ecebe6; --cal-ink: #1d1d1d; --cal-red: #e2392f; position: relative; overflow: hidden; /* a turning page stays inside the calendar */ margin: 4px 0 2px; padding: 16px 18px 10px; color: var(--cal-ink); border-radius: 4px;
+  background: radial-gradient(circle at 20% 15%, rgba(255,255,255,.55), transparent 55%), radial-gradient(circle at 80% 90%, rgba(0,0,0,.035), transparent 60%), var(--paper);
+  box-shadow: 0 1px 0 rgba(0,0,0,.05), 0 10px 26px rgba(40, 30, 10, 0.18); font-family: 'Oswald', 'Arial Narrow', Impact, sans-serif; user-select: none; }
+.tc-head { display: flex; justify-content: space-between; align-items: baseline; gap: 10px; }
+.tc-label { font-size: 11px; font-weight: 600; letter-spacing: .09em; text-transform: uppercase; }
+.tc-title { display: inline-flex; align-items: baseline; gap: 6px; font-size: 26px; font-weight: 700; letter-spacing: .05em; text-transform: uppercase; white-space: nowrap; }
+.tc-pick { border: 0; background: none; padding: 0 2px; font: inherit; letter-spacing: inherit; text-transform: inherit; color: inherit; cursor: pointer; border-bottom: 2px dashed rgba(0,0,0,.25); }
+.tc-pick:hover, .tc-pick.open { color: var(--cal-red); border-bottom-color: var(--cal-red); }
+.tc-slash { font-weight: 500; }
+.tc-sheet { position: relative; height: 371px; margin-top: 14px; perspective: 900px; }
+.tc-sheet::before { content: ''; position: absolute; left: -18px; right: -18px; top: -7px; height: 3px; background: linear-gradient(180deg, rgba(0,0,0,.10), rgba(255,255,255,.7)); z-index: 3; pointer-events: none; } /* the fold */
+.tc-page { position: absolute; inset: 0; background: var(--paper); transform-origin: top center; backface-visibility: hidden; }
+.tc-row { display: grid; grid-template-columns: 1fr auto 30px; align-items: center; width: 100%; height: 53px; margin: 0; padding: 0 2px; border: 0; border-top: 1px solid rgba(29,29,29,.45); background: transparent; font: inherit; color: inherit; text-align: right; cursor: pointer; }
+.tc-row:last-child { border-bottom: 1px solid rgba(29,29,29,.45); }
+.tc-row.empty { cursor: default; }
+.tc-num { font-size: 44px; font-weight: 700; line-height: 1; letter-spacing: -1px; transition: color .15s; }
+.tc-wd { align-self: start; margin-top: 7px; padding-left: 5px; text-align: left; font-size: 13px; font-weight: 500; letter-spacing: .04em; }
+.tc-note { text-align: left; font-family: 'Caveat', 'Segoe Script', cursive; font-size: 23px; font-weight: 600; color: #2a2a2a; transform: rotate(-4deg); white-space: nowrap; }
+.tc-row:hover:not(:disabled) .tc-num { color: rgba(226, 57, 47, .65); }
+.tc-row.on .tc-num, .tc-row.on .tc-wd { color: var(--cal-red); }
+.tc-row:disabled { cursor: default; }
+.tc-row:disabled .tc-num, .tc-row:disabled .tc-wd { opacity: .22; }
+.tc-page[aria-hidden] .tc-row:disabled .tc-num, .tc-page[aria-hidden] .tc-row:disabled .tc-wd { opacity: 1; } /* a page that is turning keeps its look */
+.tc-row:focus-visible { outline: 2px solid var(--cal-red); outline-offset: -2px; }
+/* turning a page: the old page flips up and away / the new one flips down into place */
+.tc-out { z-index: 2; animation: tc-flip-up .48s ease-in forwards; box-shadow: 0 6px 18px rgba(0,0,0,.18); }
+.tc-in { z-index: 2; animation: tc-flip-up .48s ease-out reverse both; box-shadow: 0 6px 18px rgba(0,0,0,.18); }
+@keyframes tc-flip-up { from { transform: rotateX(0deg); } to { transform: rotateX(100deg); filter: brightness(.85); } }
+.tc-choose { position: absolute; inset: 0; z-index: 5; background: var(--paper); display: grid; gap: 6px; padding: 6px 0; align-content: start; }
+.tc-choose.months { grid-template-columns: repeat(3, 1fr); align-content: stretch; }
+.tc-choose.years { grid-template-columns: repeat(4, 1fr); overflow-y: auto; }
+.tc-choose button { border: 1px solid rgba(29,29,29,.25); border-radius: 4px; background: rgba(255,255,255,.35); font: 600 20px/1.2 'Oswald', 'Arial Narrow', sans-serif; letter-spacing: .05em; text-transform: uppercase; color: var(--cal-ink); padding: 8px 0; cursor: pointer; }
+.tc-choose button:hover:not(:disabled), .tc-choose button.on { color: var(--cal-red); border-color: var(--cal-red); }
+.tc-choose button:disabled { opacity: .3; cursor: default; }
+.tc-foot { display: flex; justify-content: space-between; align-items: center; margin-top: 10px; font-size: 11px; font-weight: 600; letter-spacing: .09em; text-transform: uppercase; }
+.tc-turn { border: 0; background: none; padding: 6px 0; font: inherit; letter-spacing: inherit; text-transform: inherit; color: inherit; cursor: pointer; }
+.tc-turn:hover:not(:disabled) { color: var(--cal-red); }
+.tc-turn:disabled { opacity: .3; cursor: default; }
+.tc-pageno { opacity: .6; }
+.tc-chosen { margin: 6px 0 0; font: 13px/1.4 'Nunito', system-ui, sans-serif; color: var(--muted); }
+.tc-chosen b { color: var(--cal-ink); }
+@media (prefers-reduced-motion: reduce) { .tc-out, .tc-in { animation-duration: .01s; } }
+
+/* ---------- paper-strip fields with a rubber stamp (round 33, log in + create account) ---------- */
+.strip { position: relative; transform: rotate(var(--tilt, 0deg)); margin: 4px 0; }
+.strip-label { position: absolute; z-index: 2; left: 22px; top: 7px; font: 700 10px/1 'Oswald', 'Arial Narrow', sans-serif; letter-spacing: .12em; text-transform: uppercase; color: #6b6255; pointer-events: none; }
+.strip-paper { position: relative; min-height: 64px; clip-path: polygon(0 0.0%, 6px 12.5%, 0 25.0%, 6px 37.5%, 0 50.0%, 6px 62.5%, 0 75.0%, 6px 87.5%, 0 100.0%, calc(100% - 6px) 100.0%, calc(100% - 0px) 87.5%, calc(100% - 6px) 75.0%, calc(100% - 0px) 62.5%, calc(100% - 6px) 50.0%, calc(100% - 0px) 37.5%, calc(100% - 6px) 25.0%, calc(100% - 0px) 12.5%, calc(100% - 6px) 0.0%);
+  background: linear-gradient(180deg, transparent 47px, rgba(70, 90, 140, .28) 47px, rgba(70, 90, 140, .28) 48px, transparent 48px),
+    radial-gradient(circle at 15% 20%, rgba(255,255,255,.7), transparent 60%), #f6f1e3;
+  filter: drop-shadow(0 3px 4px rgba(60, 40, 0, .22)); }
+.form .strip-input, .strip-input { width: 100%; margin: 0; border-radius: 0; box-sizing: border-box; height: 64px; padding: 20px 96px 0 24px; border: 0; background: transparent; outline: none;
+  font: 600 27px/1 'Caveat', 'Segoe Script', cursive; color: #1f3a8a; }
+.form .strip-input:focus, .strip-input:focus { background: rgba(47, 143, 131, .06); }
+.strip.stamped .strip-input { opacity: 0; pointer-events: none; }
+.strip-mark { position: absolute; inset: 0; display: grid; place-items: center; padding: 14px 96px 0 18px; border: 0; background: none; cursor: pointer; }
+.ink { display: inline-block; max-width: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; padding: 2px 12px 0; border: 3px solid currentColor; border-radius: 6px;
+  font-family: 'Special Elite', 'Courier New', monospace; line-height: 1.25; color: #b3262a; letter-spacing: .04em; transform: rotate(-2.5deg); opacity: .9; mix-blend-mode: multiply;
+  -webkit-mask-image: radial-gradient(circle at 30% 40%, #000 55%, rgba(0,0,0,.75) 70%, #000 85%); mask-image: radial-gradient(circle at 30% 40%, #000 55%, rgba(0,0,0,.75) 70%, #000 85%); }
+.ink.new { animation: ink-in .9s ease-out both; }
+@keyframes ink-in { 0%, 38% { opacity: 0; transform: rotate(-2.5deg) scale(1.3); } 44% { opacity: .95; transform: rotate(-2.5deg) scale(1.08); } 56% { transform: rotate(-2.5deg) scale(.97); } 100% { opacity: .9; transform: rotate(-2.5deg) scale(1); } }
+.strip-mark:hover .ink { opacity: .7; }
+/* the rubber stamp itself: wooden handle + dark base, comes down onto the paper and lifts away */
+.stamper { position: absolute; z-index: 4; left: calc(50% - 46px); top: -6px; width: 92px; height: 0; pointer-events: none; animation: stamper-drop .9s ease-in-out both; }
+.stamper-handle { position: absolute; left: 31px; bottom: 14px; width: 30px; height: 46px; border-radius: 14px 14px 6px 6px; background: linear-gradient(90deg, #7a4a24, #b77a45 45%, #6a3d1c); box-shadow: inset 0 -6px 0 rgba(0,0,0,.18); }
+.stamper-handle::before { content: ''; position: absolute; left: -3px; top: -16px; width: 36px; height: 22px; border-radius: 50%; background: radial-gradient(circle at 40% 35%, #c98d55, #7a4a24); }
+.stamper-base { position: absolute; left: 0; bottom: 0; width: 92px; height: 16px; border-radius: 4px; background: linear-gradient(180deg, #3a3a3a, #1d1d1d); box-shadow: 0 3px 0 #b3262a; }
+@keyframes stamper-drop { 0% { transform: translateY(-46px); opacity: 0; } 15% { opacity: 1; } 40% { transform: translateY(38px); } 48% { transform: translateY(33px); } 58% { transform: translateY(38px); } 85% { opacity: 1; } 100% { transform: translateY(-50px); opacity: 0; } }
+.strip-eye { position: absolute; z-index: 3; right: 16px; top: 24px; border: 1px solid #d8cfba; border-radius: 999px; background: #fffaf0; padding: 4px 10px; font: 700 12px/1 'Nunito', system-ui, sans-serif; color: #4a4235; cursor: pointer; }
+.strip-eye:hover { border-color: var(--accent); }
+.strip-hint { display: block; margin: 3px 0 0 14px; }
+@media (prefers-reduced-motion: reduce) { .ink.new, .stamper { animation-duration: .01s; } }

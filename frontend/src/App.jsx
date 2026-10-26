@@ -36,7 +36,7 @@ export function App() {
       // W A S D and the arrows: zoomed in -> move around (Shift: tool settings instead);
       // otherwise W/S (↑/↓) choose a setting in the tool panel and A/D (←/→) change it
       const dir = { w: 'up', s: 'down', a: 'left', d: 'right', ArrowUp: 'up', ArrowDown: 'down', ArrowLeft: 'left', ArrowRight: 'right' }[e.key.length === 1 ? e.key.toLowerCase() : e.key];
-      if (dir && !e.ctrlKey && !e.metaKey && !e.altKey) {
+      if (dir && !s.panel && !e.ctrlKey && !e.metaKey && !e.altKey) { // not while a window or page (log in, portfolio…) is open
         e.preventDefault();
         focusedKbdRow(e.target); // a slider you clicked is the one the keys change
         if (s.zoom && !e.shiftKey) {

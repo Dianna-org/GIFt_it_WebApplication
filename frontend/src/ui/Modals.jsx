@@ -1,4 +1,6 @@
 import { Avatar } from './Avatar.jsx';
+import { DatePicker } from './DatePicker.jsx';
+import { PaperField } from './PaperField.jsx';
 import { useEffect, useRef, useState } from 'react';
 import { api } from '../api.js';
 import { useStore } from '../store.js';
@@ -38,7 +40,7 @@ export function AuthModal() {
   const [f, setF] = useState({ email: '', password: '', displayName: '', birthDate: '' });
   const [err, setErr] = useState('');
   const [busy, setBusy] = useState(false);
-  const set = (k) => (e) => setF({ ...f, [k]: e.target.value });
+  const setV = (k) => (v) => setF((cur) => ({ ...cur, [k]: v }));
 
   const submit = async (e) => {
     e.preventDefault();
@@ -61,15 +63,22 @@ export function AuthModal() {
   return (
     <Modal title={mode === 'login' ? 'Log in' : 'Create your account'} onClose={() => setPanel(null)}>
       <form onSubmit={submit} className="form">
+        {/* the three strips of paper: write on them, and a stamp prints what you wrote (round 33) */}
         {mode === 'register' && (
-          <label>Display name<input required minLength={2} maxLength={30} value={f.displayName} onChange={set('displayName')} autoComplete="nickname" /></label>
+          <PaperField key="name" label="Display name" value={f.displayName} onChange={setV('displayName')} tilt={-0.6}
+            inputProps={{ required: true, minLength: 2, maxLength: 30, autoComplete: 'nickname' }} />
         )}
-        <label>Email<input required type="email" value={f.email} onChange={set('email')} autoComplete="email" /></label>
-        <label>Password<input required type="password" minLength={mode === 'register' ? 8 : 1} value={f.password} onChange={set('password')} autoComplete={mode === 'login' ? 'current-password' : 'new-password'} />
-          {mode === 'register' && <small>At least 8 characters.</small>}</label>
+        <PaperField key="email" label="Email" type="email" value={f.email} onChange={setV('email')} tilt={0.5}
+          inputProps={{ required: true, autoComplete: 'email' }} />
+        <PaperField key="password" label="Password" type="password" value={f.password} onChange={setV('password')} tilt={-0.4}
+          hint={mode === 'register' ? 'At least 8 characters.' : undefined}
+          inputProps={{ required: true, minLength: mode === 'register' ? 8 : 1, autoComplete: mode === 'login' ? 'current-password' : 'new-password' }} />
         {mode === 'register' && (
-          <label>Birth date<input required type="date" max={new Date().toISOString().slice(0, 10)} value={f.birthDate} onChange={set('birthDate')} />
-            <small>You must be at least 14 to have an account. Younger kids can still make cards without one.</small></label>
+          <div className="field">
+            <span className="field-label">Birth date</span>
+            <DatePicker value={f.birthDate} onChange={(birthDate) => setF((cur) => ({ ...cur, birthDate }))} />
+            <small>You must be at least 14 to have an account. Younger kids can still make cards without one.</small>
+          </div>
         )}
         {err && <p className="error" role="alert">{err}</p>}
         <button className="btn primary wide" disabled={busy}>{busy ? 'Please wait…' : mode === 'login' ? 'Log in' : 'Create account'}</button>

@@ -426,7 +426,7 @@ TODO:
 - the card in the picture/ animation should be bigger and clearer, so the receiver can see clearly the text written on the birthday card (if there is text on the card);
 
 
-- maybe include more details to the text box
+x- maybe include more details to the text box
 - include order details
 - maybe add gift points: for every birthday card creadet by a user with an account, the user receives a fixed ammount of points;
 	- with these received points, the user can buy: new sticker packs, new tapes, new tools OR tool designs (like the tools can look differently), can buy colored 
