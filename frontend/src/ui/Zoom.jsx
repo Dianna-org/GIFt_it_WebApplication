@@ -1,4 +1,4 @@
-import { useRef } from 'react';
+import { useLayoutEffect, useRef, useState } from 'react';
 import { useStore, ZOOM_MAX } from '../store.js';
 import { offsetOf, zoomView } from '../scene/zoom.js';
 import { canvasToWorld } from '../scene/Card.jsx';
@@ -35,6 +35,19 @@ export function ZoomOverlay() {
   const zoom = useStore((s) => s.zoom);
   const mapHidden = useStore((s) => s.mapHidden);
   const dragging = useRef(false);
+  // the map sits in the top-right corner (the logo is hidden while zoomed in), just below the top bar's
+  // buttons, however many rows they take on this screen
+  const [mapTop, setMapTop] = useState(14);
+  useLayoutEffect(() => {
+    if (!zoom) return undefined;
+    const place = () => {
+      const bar = document.querySelector('.topbar .center');
+      setMapTop(bar ? Math.round(bar.getBoundingClientRect().bottom) + 10 : 14);
+    };
+    place();
+    window.addEventListener('resize', place);
+    return () => window.removeEventListener('resize', place);
+  }, [zoom]);
   if (!zoom) return null;
 
   const lookAt = (e) => {
@@ -51,7 +64,7 @@ export function ZoomOverlay() {
   return (
     <>
       <div className="zoom-area" aria-hidden="true" />
-      <div className={'zoom-map' + (mapHidden ? ' folded' : '')} title={mapHidden ? 'Show the zoom map' : 'Zoom map – the red frame is what you see. Click or drag to move around.'}>
+      <div className={'zoom-map' + (mapHidden ? ' folded' : '')} style={{ top: mapTop }} title={mapHidden ? 'Show the zoom map' : 'Zoom map – the red frame is what you see. Click or drag to move around.'}>
         <span className="zoom-map-title">
           {mapHidden
             ? <button className="map-toggle" onClick={() => useStore.setState({ mapHidden: false })} aria-label="Show the zoom map">🗺 Map ▾</button>

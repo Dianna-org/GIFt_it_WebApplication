@@ -20,12 +20,16 @@ button { font: inherit; color: inherit; cursor: pointer; }
 
 .topbar { position: fixed; top: 0; left: 0; right: 0; display: flex; align-items: center; gap: 12px; padding: 10px 14px; pointer-events: none; z-index: 5; }
 .topbar > * { pointer-events: auto; }
-.logo { flex: none; line-height: 0; align-self: flex-start; }
-.logo img { width: 104px; height: 104px; display: block; } /* the user's logo picture exactly as it is, only shown smaller */
 .center { flex: 1; display: flex; justify-content: center; gap: 10px; flex-wrap: wrap; pointer-events: none; }
 .center > * { pointer-events: auto; }
-.menu-btn { margin-left: auto; width: 46px; height: 46px; border-radius: 50%; border: 0; font-size: 22px; background: var(--accent); color: var(--accent-ink); box-shadow: 0 3px 12px rgba(0, 0, 0, 0.2); }
-.menu-btn:hover { filter: brightness(1.08); }
+/* the menu button IS the logo: the user's picture exactly as it is, only shown smaller (round 27) */
+.menu-btn.logo-btn { margin-left: auto; align-self: flex-start; flex: none; padding: 0; border: 0; background: none; line-height: 0; cursor: pointer; border-radius: 4px; box-shadow: 0 4px 14px rgba(60, 20, 30, 0.28); transition: transform 0.15s ease, box-shadow 0.15s ease, opacity 0.3s ease, visibility 0.3s; }
+.menu-btn.logo-btn img { width: 140px; height: 140px; display: block; }
+/* zoomed in: the logo fades away (keeps its place, so the top bar doesn't jump) and the zoom map takes its corner */
+.menu-btn.logo-btn.gone { opacity: 0; visibility: hidden; pointer-events: none; transform: scale(0.92); }
+.menu-btn.logo-btn:hover { transform: translateY(-2px) scale(1.03); box-shadow: 0 8px 20px rgba(60, 20, 30, 0.35); }
+.menu-btn.logo-btn:active { transform: scale(0.98); }
+.menu-btn.logo-btn:focus-visible { outline: 3px solid var(--accent); outline-offset: 3px; }
 
 .btn { background: var(--panel); border: 1px solid var(--line); border-radius: 999px; padding: 8px 14px; box-shadow: 0 2px 8px rgba(80, 50, 0, 0.1); display: inline-flex; align-items: center; gap: 6px; font-weight: 700; }
 .btn { transition: background-color 0.15s ease, filter 0.15s ease, transform 0.05s ease; }
@@ -138,7 +142,7 @@ textarea, select, .text, .form input { width: 100%; font: inherit; padding: 8px 
 .preview canvas { width: 100%; border-radius: 12px; border: 1px solid var(--line); background: #eee; }
 @media (max-width: 720px) {
   .export { grid-template-columns: 1fr; }
-  .logo img { width: 64px; height: 64px; }
+  .menu-btn.logo-btn img { width: 88px; height: 88px; }
   .topbar { flex-wrap: wrap; }
   .rotate input { width: 80px; }
 }
@@ -159,7 +163,7 @@ textarea, select, .text, .form input { width: 100%; font: inherit; padding: 8px 
 .zoom-slider input { width: 110px; accent-color: var(--accent); }
 .zoom-slider b { min-width: 34px; text-align: right; font-variant-numeric: tabular-nums; }
 .zoom-area { position: fixed; top: 0; bottom: 0; right: 0; left: 100%; pointer-events: none; border-left: 3px solid rgba(255, 255, 255, 0.85); box-shadow: inset 12px 0 18px -14px rgba(60, 40, 0, 0.35); z-index: 1; }
-.zoom-map { position: fixed; right: 14px; top: 118px; width: 230px; opacity: 0; background: rgba(255, 252, 244, 0.9); border: 1px solid var(--line); border-radius: 12px; padding: 6px; box-shadow: 0 6px 20px rgba(60, 40, 0, 0.2); z-index: 7; }
+.zoom-map { position: fixed; right: 14px; top: 14px; width: 230px; opacity: 0; background: rgba(255, 252, 244, 0.9); border: 1px solid var(--line); border-radius: 12px; padding: 6px; box-shadow: 0 6px 20px rgba(60, 40, 0, 0.2); z-index: 7; }
 .zoom-map-title { display: block; font-size: 11px; font-weight: 800; text-transform: uppercase; letter-spacing: 0.06em; color: var(--muted); margin: 0 2px 4px; }
 .zoom-map-canvas { display: block; width: 216px; border-radius: 6px; cursor: crosshair; touch-action: none; box-shadow: 0 1px 4px rgba(60, 40, 0, 0.25); }
 .zoom-map-side { font-weight: 700; text-transform: none; letter-spacing: 0; color: var(--ink); margin-left: 4px; }

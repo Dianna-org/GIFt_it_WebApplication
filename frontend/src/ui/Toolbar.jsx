@@ -505,6 +505,8 @@ export function TopBar() {
   const paper = useStore((s) => s.paper);
   const setMenu = useStore((s) => s.setMenu);
   const menuOpen = useStore((s) => s.menuOpen);
+  // while zoomed in the logo (= menu button) is hidden, so it can't be pressed by accident (round 29)
+  const zoomed = useStore((s) => s.zoom > 0 && !s.zoomClosing);
   const markDirty = useStore((s) => s.markDirty);
   const [, force] = useState(0);
   useEffect(() => paper.onChange(() => force((n) => n + 1)), [paper]);
@@ -513,7 +515,6 @@ export function TopBar() {
 
   return (
     <header className="topbar">
-      <div className="logo" title="GIFt it! – make a birthday card"><img src="/logo.jpeg" alt="GIFt it!" /></div>
       <div className="center">
         <button className="btn" disabled={!paper.canUndo && !paper.choice} onClick={() => { if (paper.undo()) markDirty(); }} title={`Undo (Ctrl+Z) – ${paper.history.length} step${paper.history.length === 1 ? '' : 's'} available`}>↶ Undo</button>
         <button className="btn danger-soft" onClick={eraseAll} title="Erase everything on the card">🧽 Erase all</button>
@@ -525,7 +526,10 @@ export function TopBar() {
         <BgPicker />
         <KeysHelp />
       </div>
-      <button className="menu-btn" onClick={() => setMenu(!menuOpen)} aria-label="Open menu" aria-expanded={menuOpen}>☰</button>
+      {/* the logo (the user's picture, unchanged) is the menu button */}
+      <button className={'menu-btn logo-btn' + (zoomed ? ' gone' : '')} onClick={() => setMenu(!menuOpen)} aria-label="Open menu" aria-expanded={menuOpen} aria-hidden={zoomed} tabIndex={zoomed ? -1 : 0} title="Menu – account, save, portfolio, export, card size…">
+        <img src="/logo.jpeg" alt="GIFt it! – open the menu" />
+      </button>
     </header>
   );
 }

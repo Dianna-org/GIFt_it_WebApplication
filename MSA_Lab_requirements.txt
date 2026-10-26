@@ -1,11 +1,6 @@
 MSA Lab project requirements:
 Create a web application
 
-To start it again later:
-sudo systemctl start docker
-
-cd /home/dia/Documents/MSA_Web
-x
 
 Web application running at: 
 http://localhost:3000
@@ -411,18 +406,26 @@ And please write down in the PROJECT_NOTES.txt every change you made here.
 
 --------------------------------------------------------------------------------------------------------------------------------------------------------
 
+Ok, I have some adjustments I would like to add for this app:
+- make the logo a bit bigger, move it on the right upper corner, and transform the logo to be the menu button, instead of the button that is now in the right upper corner
+  
+If something is unclear, please ask me, and I will try to explain it better.
+And please write down in the PROJECT_NOTES.txt every change you made here.
+
+--------------------------------------------------------------------------------------------------------------------------------------------------------
+
 
 
 
 	
 	
 TODO:
-- play with the log in menux
+- play with the log in menu
+- move the logo so id doesn't sit so far in the corner
 
 - the card in the picture/ animation should be bigger and clearer, so the receiver can see clearly the text written on the birthday card (if there is text on the card);
 
 
-- change the name of the app to be: GIFt it! (we'll also have to work on a logo and font for this title, but we'll work on that later)
 - maybe include more details to the text box
 - include order details
 - maybe add gift points: for every birthday card creadet by a user with an account, the user receives a fixed ammount of points;

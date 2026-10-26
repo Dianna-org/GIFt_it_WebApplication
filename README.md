@@ -49,6 +49,7 @@ GitHub Actions (`.github/workflows/ci.yml`) runs the same three steps on every p
 | Zoom | "🔍 Zoom in" (or +) splits the screen: the tools stay on the left, the card is magnified on the right (up to 8×) and you can keep drawing there. Set the amount with the slider or the mouse wheel; the zoom map (top right) shows the whole card with a red frame for what you see – click or drag it (or use the arrow keys) to look elsewhere. With no tool in your hand, dragging in the zoomed view moves around the card like a map (it never opens, picks up or turns the card). "↩ Zoom out" (or −) goes back to the normal view. |
 | Reset rotation | "🎯 Reset rotation" at the top puts the card back flat, the way it started. |
 | Pick up and turn the card | With no tool in hand, click the card. Drag to turn it (Shift = diagonal); click it or the desk to put it down. "Turn card" at the top turns it on three axes: vertical, longitudinal, diagonal. Both sides can be decorated. |
+| Menu | Click the GIFt it! logo in the top-right corner: account, saving to your portfolio, card size, downloading pictures and GIFs, new card. While you are zoomed in, the logo is hidden (zoom out to use the menu). |
 | Card size | Menu → Card size, at any time; the design is scaled to fit and Undo brings the old size back. |
 | Background colour | "Background" at the top: pastel list or "Any colour…". |
 | Undo / Erase all | Undo keeps up to 150 steps. "Erase all" asks for confirmation in the app, then clears both sides, tape, stickers, text and cuts (it can be undone too). |

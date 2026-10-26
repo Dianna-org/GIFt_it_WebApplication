@@ -1,6 +1,6 @@
 GIFt it! (formerly Card Studio) – PROJECT NOTES (memory file for future sessions)
 ====================================================================
-Last updated: 2026-10-26 (round 26).   Location: /home/dia/Documents/MSA_WebApplication/PROJECT_NOTES.txt
+Last updated: 2026-10-26 (round 29).   Location: /home/dia/Documents/MSA_WebApplication/PROJECT_NOTES.txt
 Read this first before changing anything. Keep it up to date after every change round.
 
 --------------------------------------------------------------------
@@ -9,8 +9,10 @@ Read this first before changing anything. Keep it up to date after every change 
 - NAME: the app is called "GIFt it!" (with the exclamation mark; "GIF" highlighted) since round 23.
   LOGO = the user's EXACT picture LogoDesign1.jpeg (round 25; maroon square, gold frame, cake-card with
   candles and flowers, "GIFt it!" in gold). frontend/public/logo.jpeg is a byte-for-byte copy (cmp-checked)
-  and is used everywhere as it is: header (<img> only – no title text next to it since round 26 – shown at
-  104 px, 64 px on narrow screens, top-left, no crop, no rounded corners), browser tab
+  and is used everywhere as it is: since round 27 the logo IS THE MENU BUTTON in the top-right corner
+  (button.menu-btn.logo-btn with the <img>, 140 px, 88 px under 720 px wide (round 29); HIDDEN WHILE ZOOMED IN
+  (class .gone = fades out but keeps its place, not clickable, not focusable) so it isn't pressed by accident; hover lifts it a little; the old
+  round ☰ button and the left logo are gone), no crop, no rounded corners, browser tab
   icon and apple-touch-icon (index.html points straight at /logo.jpeg), README. NO resized/edited copies –
   the user insisted: "keep the photo as is, don't change anything". To change the logo: copy the new file
   over frontend/public/logo.jpeg. (Earlier logos: round 23 vector redraw, round 24 App_Logo.jpeg – both gone.)
@@ -337,7 +339,7 @@ ZOOM (scene/zoom.js, Desk.jsx SplitRenderer, ui/Zoom.jsx)
   an open pop-up only (capture-phase keydown in usePopover with stopImmediatePropagation, so the tool in the
   hand is NOT put back). The zoom map has "▴ Hide" -> folds to a "🗺 Map ▾" button (store.mapHidden,
   .zoom-map.folded; the map isn't redrawn while folded – Desk.jsx checks mapCanvas.offsetParent). The side
-  menu (☰) already had ✕. .options-pill counts as a screen blocker for putting tools down.
+  menu (opened with the logo button, top right) already had ✕. .options-pill counts as a screen blocker for putting tools down.
 - Shapes tool (round 17, "like in Word"): a see-through teal plastic stencil on the desk (heart, star,
   circle, triangle, square, hexagon cut-outs; DEFS id 'shapes', kind 'pad', home [-5.5, -3.35]; an invisible
   plate makes the cut-outs clickable). The panel shows 37 shapes: square, rectangle, rounded rectangle,
@@ -556,3 +558,24 @@ PERFORMANCE
    the logo picture). ui/Toolbar.jsx (.logo holds only the <img>), styles.css (.logo: no pill background,
    align-self: flex-start so it stays top-left when the top bar wraps; .logo img 104 px, 64 px under 720 px
    wide; .brand styles removed). Verified in the browser at desktop size and at phone size (375 px).
+27 (2026-10-26) Logo moved to the top-right corner, a bit bigger (104 -> 124 px; phones 64 -> 76 px), and it is
+   now the menu button – the round ☰ button is removed (user request). ui/Toolbar.jsx (left .logo removed;
+   menu button = logo picture, aria-label "Open menu", tooltip "Menu – account, save, portfolio, export,
+   card size…"), styles.css (.menu-btn.logo-btn: no background, picture unchanged, soft shadow, hover lift,
+   focus outline; zoom map moved down to top 148 px so it is not under the logo), scene/Desk.jsx (screen
+   blockers: .topbar .logo removed, .menu-btn still counts), README. Verified in the browser: logo top
+   right, click opens the menu, Esc closes it, zoomed in the map sits below the logo, phone size (375 px)
+   logo in the top-right corner. Tests: 56 frontend passed.
+28 (2026-10-26) Logo (menu button) even bigger (user request): 124 -> 168 px, phones 76 -> 100 px; zoom map moved
+   down to top 192 px so it stays below the logo. File: styles.css. Verified in the browser: logo 168 px in
+   the top-right corner, clear of the card; zoomed in, the map starts at 192 px (logo ends at 178 px); clicking
+   the logo still opens the menu.
+29 (2026-10-26) Logo a bit smaller (168 -> 140 px, phones 100 -> 88 px) and hidden only while the zoom is on
+   (user request: not pressed by accident, attention on the map). ui/Toolbar.jsx (zoomed = zoom > 0 and not
+   zooming out -> class "gone", aria-hidden, tabIndex -1), styles.css (.logo-btn.gone: opacity 0,
+   visibility hidden, no pointer events, fades in 0.3 s; keeps its space so the top bar doesn't jump),
+   ui/Zoom.jsx (zoom map in the top-right corner, placed 10 px below the top bar's buttons – measured, also
+   on resize – because at the logo's old height it covered the "Background" button), scene/Desk.jsx (a hidden
+   logo no longer counts as a screen blocker for putting tools down), README. Verified in the browser: logo
+   140 px; zoom in -> logo hidden (visibility hidden, opacity 0), map at 156 px under the top bar (ends 146 px),
+   no button covered; zoom out -> logo back. Tests: 56 frontend passed.
