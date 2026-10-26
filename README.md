@@ -1,4 +1,6 @@
-# Card Studio – a birthday card maker
+<img src="frontend/public/logo.jpeg" alt="GIFt it! logo" width="160" />
+
+# GIFt it! – a birthday card maker
 
 Design a birthday card on a 3D desk: pick crayons, markers, a paint brush, glitter pens, washi tape (cut with scissors), stickers and text boxes, then save it to your private portfolio or download it as a picture or animated GIF.
 

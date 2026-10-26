@@ -1,11 +1,20 @@
-CARD STUDIO – PROJECT NOTES (memory file for future sessions)
+GIFt it! (formerly Card Studio) – PROJECT NOTES (memory file for future sessions)
 ====================================================================
-Last updated: 2026-10-24 (round 22).   Location: /home/dia/Documents/MSA_WebApplication/PROJECT_NOTES.txt
+Last updated: 2026-10-26 (round 26).   Location: /home/dia/Documents/MSA_WebApplication/PROJECT_NOTES.txt
 Read this first before changing anything. Keep it up to date after every change round.
 
 --------------------------------------------------------------------
 0. QUICK FACTS
 --------------------------------------------------------------------
+- NAME: the app is called "GIFt it!" (with the exclamation mark; "GIF" highlighted) since round 23.
+  LOGO = the user's EXACT picture LogoDesign1.jpeg (round 25; maroon square, gold frame, cake-card with
+  candles and flowers, "GIFt it!" in gold). frontend/public/logo.jpeg is a byte-for-byte copy (cmp-checked)
+  and is used everywhere as it is: header (<img> only – no title text next to it since round 26 – shown at
+  104 px, 64 px on narrow screens, top-left, no crop, no rounded corners), browser tab
+  icon and apple-touch-icon (index.html points straight at /logo.jpeg), README. NO resized/edited copies –
+  the user insisted: "keep the photo as is, don't change anything". To change the logo: copy the new file
+  over frontend/public/logo.jpeg. (Earlier logos: round 23 vector redraw, round 24 App_Logo.jpeg – both gone.)
+  Docker/compose names stay msa_webapplication-* (not renamed on purpose).
 - What: a birthday-card maker web app (MSA lab project). Brief: MSA_Lab_requirements.txt (the user edits it;
   do NOT commit changes to it unless asked). Inspiration pictures were in the old folder (low-poly 3D desk,
   yellow background, folded card, tools around it).
@@ -518,3 +527,32 @@ PERFORMANCE
    two lines and a taller box, corner handle -> size 120 -> 175, round handle rotated it, panel changed the
    words to "Happy Birthday Ana!", bold and Clean sans (3 lines), Done -> panel back to the next text,
    clicking the text selected it again. Tests: 56 frontend, smoke 23 passed.
+23 (2026-10-24) New name "GIFt it!" and logo from the user's App_Logo.jpeg (user request). The picture was
+   redrawn as a clean vector (busy background left out so it stays readable as a 16 px tab icon): files
+   frontend/public/logo.svg + favicon.svg (new; Vite copies public/ into the build), scripts/make_logo.py
+   (new generator), frontend/index.html (title "GIFt it! – make a birthday card", SVG favicon +
+   apple-touch-icon instead of the 🎂 emoji), ui/Toolbar.jsx (header: logo picture + "GIFt it!" with a
+   gradient "GIF"), styles.css (.logo, .brand), config.js comment, deploy.sh/runlocal.sh/stopwebapp.sh
+   messages, README (logo + title), docs/MARKETING.md, CLAUDE.md title. App_Logo.jpeg itself stays in the
+   root (user's file, not committed unless asked, like the screenshots). Verified in the browser: tab title
+   and icon, header logo; icon compared with the picture (fold left of the candles, 3 layers with
+   sprinkles). Tests: 56 frontend passed.
+24 (2026-10-24) Logo = the exact picture App_Logo.jpeg (user request), replacing the round-23 vector redraw
+   (logo.svg, favicon.svg and scripts/make_logo.py deleted). Files: frontend/public/logo.jpeg (copy of the
+   original), logo-192.jpg, favicon.png, apple-touch-icon.png (resized copies), frontend/index.html (PNG
+   favicon + apple-touch-icon), ui/Toolbar.jsx (header uses logo-192.jpg), styles.css (whole picture,
+   rounded corners 10 px, no crop), README (logo.jpeg). Verified in the browser: header picture loads
+   (192 px), tab icon and touch icon served (200).
+25 (2026-10-26) Logo = LogoDesign1.jpeg exactly as the user made it (user request, after the logo ideas from
+   App_Logo.jpeg + Logo_Title.jpeg). frontend/public/logo.jpeg replaced by an identical copy of it; the
+   round-24 resized files (logo-192.jpg, favicon.png, apple-touch-icon.png) deleted; index.html icon +
+   apple-touch-icon -> /logo.jpeg; ui/Toolbar.jsx header <img src="/logo.jpeg">; styles.css .logo img 48 px,
+   no rounded corners. The "GIFt it!" text label next to it in the header is unchanged. A first rebuild hit
+   a Docker name conflict because the app was being restarted at the same moment; the restarted containers
+   already had the new build. Verified: served /logo.jpeg is identical to LogoDesign1.jpeg (cmp), header shows
+   it (1200x1200 shown at 48x48), tab icon = /logo.jpeg. The logo-ideas pictures stay in the session
+   scratchpad, not in the project.
+26 (2026-10-26) Header: logo bigger and the "GIFt it!" text next to it removed (user request; the name is in
+   the logo picture). ui/Toolbar.jsx (.logo holds only the <img>), styles.css (.logo: no pill background,
+   align-self: flex-start so it stays top-left when the top bar wraps; .logo img 104 px, 64 px under 720 px
+   wide; .brand styles removed). Verified in the browser at desktop size and at phone size (375 px).

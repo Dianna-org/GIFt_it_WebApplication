@@ -89,7 +89,7 @@ echo "Starting frontend..."
 pids+=($!)
 
 echo "--------------------------------------------------"
-echo " * Card Studio (React):  http://localhost:${FRONTEND_PORT}"
+echo " * GIFt it! (React):  http://localhost:${FRONTEND_PORT}"
 echo " * Backend (.NET API):   http://localhost:${BACKEND_PORT}/api   (health: /api/health)"
 echo " * MongoDB Database:     localhost:${MONGODB_PORT}"
 echo "--------------------------------------------------"

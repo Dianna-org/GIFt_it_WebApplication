@@ -14,7 +14,7 @@ set -a && . ./.env && set +a
 
 WEB_PORT="${WEB_PORT:-3000}"
 
-echo "Starting 'Card Studio' Local Deployment..."
+echo "Starting 'GIFt it!' Local Deployment..."
 
 # Check if Docker daemon is running
 if ! docker info > /dev/null 2>&1; then
@@ -28,7 +28,7 @@ fi
 if ss -ltn "sport = :$WEB_PORT" | grep -q LISTEN \
    && ! docker ps --format '{{.Names}} {{.Ports}}' | grep -q "msa_webapplication-web-1 .*:$WEB_PORT->"; then
   echo "Error: port $WEB_PORT is already in use by another program (for example another web app or ./runlocal.sh)."
-  echo "       Stop it, or start Card Studio on another port:  WEB_PORT=3002 ./deploy.sh"
+  echo "       Stop it, or start GIFt it! on another port:  WEB_PORT=3002 ./deploy.sh"
   exit 1
 fi
 
@@ -49,7 +49,7 @@ fi
 
 echo "Deployment successful!"
 echo "--------------------------------------------------"
-echo " * Card Studio (React):  http://localhost:${WEB_PORT}"
+echo " * GIFt it! (React):  http://localhost:${WEB_PORT}"
 echo " * Backend (.NET API):   http://localhost:${WEB_PORT}/api   (health: /api/health)"
 echo " * MongoDB Database:     inside Docker only (not exposed)"
 echo "--------------------------------------------------"

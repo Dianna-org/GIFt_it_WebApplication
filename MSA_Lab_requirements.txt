@@ -372,25 +372,55 @@ And please write down in the PROJECT_NOTES.txt every change you made here.
 
 --------------------------------------------------------------------------------------------------------------------------------------------------------
 
+Ok, I have some adjustments I would like to add for this app:
+- please look at ToolMenuCoveringCard.png: there is a bug with the menu => it covers the card, and the user cannot draw on the whole birthday card;
+	=> please add a button for the user to press it so the menu will dissapear (do this for every tipe of menu that covers the card)
+  
+If something is unclear, please ask me, and I will try to explain it better.
+And please write down in the PROJECT_NOTES.txt every change you made here.
+
+--------------------------------------------------------------------------------------------------------------------------------------------------------
+
+Ok, I have some adjustments I would like to add for this app:
+- I like the Hide button for the Zoom in map; Keep it;
+- for the other Hide buttons, please implement it so, if the user took a tool in their hands, and pressed the hide button on the menu, it dissapears, but when the user picks up anothe tool, the menu reapers; the button hide hides the menu while the user uses the tool in their hands; when the user takes another tool, the menu reappears;
+  
+If something is unclear, please ask me, and I will try to explain it better.
+And please write down in the PROJECT_NOTES.txt every change you made here.
+
+--------------------------------------------------------------------------------------------------------------------------------------------------------
+
+Ok, I have some adjustments I would like to add for this app:
+- please add a button on top which, when the user presses, it shows a menu with all the keyboard keys the user can press and use inside the web app, alongside a short explanation to what each key does
+- please implement the keys W, A, S, D (and the 4 arrows on the keyboard), so they do:
+	=> A, D (respectively, the left and the right arrow keys) should let the user choose thickness, straightness of a tool, or anything that includes an action of choosing some features for a tool (or at the colour map, when
+	choosing a color);
+	=> W, A, S, D (respectively, all four arrow keys) should let the user move up, left, down, right, when he is using the Zoom in action;
+  
+If something is unclear, please ask me, and I will try to explain it better.
+And please write down in the PROJECT_NOTES.txt every change you made here.
+
+--------------------------------------------------------------------------------------------------------------------------------------------------------
+
+Ok, I have some adjustments I would like to add for this app:
+- add a text box action:
+	=> after the user had written a message, selected a font, and put down the text on the birthday card, the user should be able to modify the height or width of the text box (like he should be able to choose how much the text should cover the card, and where should the text be), the rotation of the text, and so on;
+  
+If something is unclear, please ask me, and I will try to explain it better.
+And please write down in the PROJECT_NOTES.txt every change you made here.
+
+--------------------------------------------------------------------------------------------------------------------------------------------------------
+
+
 
 
 	
 	
 TODO:
-- CHECK IF THERE ARE AT LEAST 3 DYNAMIC ELEMENTS IN THIS WEB APPLICATION!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
+- play with the log in menux
 
 - the card in the picture/ animation should be bigger and clearer, so the receiver can see clearly the text written on the birthday card (if there is text on the card);
-- please implement the keys W, A, S, D (and the 4 arrows on the keyboard), so they do:
-	=> A, D (respectively, the left and the right arrow keys) should let the user choose thickness, straightness of a tool, or anything that includes an action of choosing some features for a tool (or at the colour map, when
-	choosing a color);
-	=> W, A, S, D (respectively, all four arrow keys) should let the user move up, left, down, right, when he is using the Zoom in action;
-	
 
-	
-- fix the errors in the screenshots!!!!!!!!
-- add a text box action:
-	=> after the user had written a message, selected a font, and put down the text on the birthday card, the user should be able to modify the length of the text box (like he should be able to choose how much the text should
-	cover the card, and where should the text be), the rotation of the text, and so on;
 
 - change the name of the app to be: GIFt it! (we'll also have to work on a logo and font for this title, but we'll work on that later)
 - maybe include more details to the text box

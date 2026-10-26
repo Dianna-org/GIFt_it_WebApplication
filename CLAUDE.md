@@ -1,4 +1,4 @@
-# Card Studio – read me first
+# GIFt it! (formerly "Card Studio") – read me first
 
 Before working on this project, read `PROJECT_NOTES.txt` (same folder). It lists everything already
 implemented, how it works, where it lives, how to run/test it, the user's preferences, and the change log.

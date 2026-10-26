@@ -1,4 +1,4 @@
-// Shared constants for the card studio.
+// Shared constants for GIFt it! (the birthday card maker).
 
 export const PASTELS = [
   { name: 'Butter', color: '#fde9a0' },

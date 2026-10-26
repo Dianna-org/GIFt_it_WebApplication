@@ -513,7 +513,7 @@ export function TopBar() {
 
   return (
     <header className="topbar">
-      <div className="logo">🎂 <span>Card Studio</span></div>
+      <div className="logo" title="GIFt it! – make a birthday card"><img src="/logo.jpeg" alt="GIFt it!" /></div>
       <div className="center">
         <button className="btn" disabled={!paper.canUndo && !paper.choice} onClick={() => { if (paper.undo()) markDirty(); }} title={`Undo (Ctrl+Z) – ${paper.history.length} step${paper.history.length === 1 ? '' : 's'} available`}>↶ Undo</button>
         <button className="btn danger-soft" onClick={eraseAll} title="Erase everything on the card">🧽 Erase all</button>

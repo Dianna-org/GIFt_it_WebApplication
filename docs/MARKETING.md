@@ -31,7 +31,7 @@
 | Product Hunt / university showcase | free | Launch day with a short demo video. |
 | SEO | free | A landing page for "free online birthday card maker", "make a birthday card for a friend". |
 
-**Built-in virality:** the exported pictures/GIFs can carry a small "made with Card Studio" corner mark (let users remove it later as a paid perk) so every shared card is an ad.
+**Built-in virality:** the exported pictures/GIFs can carry a small "made with GIFt it!" corner mark (let users remove it later as a paid perk) so every shared card is an ad.
 
 ## Pricing sanity check (when you get there)
 Compare free competitors (Canva, Adobe Express, Piktochart etc.) honestly: you will not beat them on templates. You win on **feel** (the 3D desk, real tool behaviour, animations). Sell the feeling.

@@ -20,7 +20,8 @@ button { font: inherit; color: inherit; cursor: pointer; }
 
 .topbar { position: fixed; top: 0; left: 0; right: 0; display: flex; align-items: center; gap: 12px; padding: 10px 14px; pointer-events: none; z-index: 5; }
 .topbar > * { pointer-events: auto; }
-.logo { font-weight: 800; font-size: 18px; background: var(--panel); padding: 8px 14px; border-radius: 999px; box-shadow: 0 2px 10px rgba(80, 50, 0, 0.12); white-space: nowrap; }
+.logo { flex: none; line-height: 0; align-self: flex-start; }
+.logo img { width: 104px; height: 104px; display: block; } /* the user's logo picture exactly as it is, only shown smaller */
 .center { flex: 1; display: flex; justify-content: center; gap: 10px; flex-wrap: wrap; pointer-events: none; }
 .center > * { pointer-events: auto; }
 .menu-btn { margin-left: auto; width: 46px; height: 46px; border-radius: 50%; border: 0; font-size: 22px; background: var(--accent); color: var(--accent-ink); box-shadow: 0 3px 12px rgba(0, 0, 0, 0.2); }
@@ -137,7 +138,7 @@ textarea, select, .text, .form input { width: 100%; font: inherit; padding: 8px 
 .preview canvas { width: 100%; border-radius: 12px; border: 1px solid var(--line); background: #eee; }
 @media (max-width: 720px) {
   .export { grid-template-columns: 1fr; }
-  .logo span { display: none; }
+  .logo img { width: 64px; height: 64px; }
   .topbar { flex-wrap: wrap; }
   .rotate input { width: 80px; }
 }
