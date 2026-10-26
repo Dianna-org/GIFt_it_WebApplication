@@ -32,4 +32,5 @@ export const api = {
   createDesign: (b) => request('/designs', { method: 'POST', body: b }),
   updateDesign: (id, b) => request(`/designs/${id}`, { method: 'PUT', body: b }),
   deleteDesign: (id) => request(`/designs/${id}`, { method: 'DELETE' }),
+  setAvatar: (avatar) => request('/account/avatar', { method: 'PUT', body: { avatar } }),
 };

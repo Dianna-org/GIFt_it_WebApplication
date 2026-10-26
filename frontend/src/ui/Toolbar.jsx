@@ -1,6 +1,6 @@
 import { useEffect, useLayoutEffect, useRef, useState } from 'react';
 import { useStore } from '../store.js';
-import { DRAW_TOOLS, FONTS, PASTELS, TAPE_PATTERNS, TOOL_LABELS } from '../config.js';
+import { CARD_SIZES, DRAW_TOOLS, FONTS, PASTELS, TAPE_PATTERNS, TOOL_LABELS } from '../config.js';
 import { STICKERS, stickerCanvas } from '../engine/stickers.js';
 import { PATTERNS } from '../engine/patterns.js';
 import { renderStroke } from '../engine/brushes.js';
@@ -417,6 +417,33 @@ function KeysHelp() {
   );
 }
 
+/** "📐 Card size": choose the card's size (moved here from the menu in round 30). */
+function CardSizePicker() {
+  const cardSize = useStore((s) => s.cardSize);
+  const changeCardSize = useStore((s) => s.changeCardSize);
+  const { open, setOpen, ref } = usePopover();
+  const cur = CARD_SIZES.find((c) => c.id === cardSize) || CARD_SIZES[0];
+  // Size can change at any time: the design is scaled to fit, and Undo brings the old size back.
+  const pick = (id) => { if (id !== cardSize) changeCardSize(id); setOpen(false); };
+  return (
+    <div className="popwrap" ref={ref}>
+      <button className="btn" onClick={() => setOpen(!open)} title="Card size – change it any time, the design is scaled to fit">📐 {cur.label.split(' ')[0]}</button>
+      {open && (
+        <div className="pop sizes">
+          <PopHead title="Card size" onClose={() => setOpen(false)} />
+          {CARD_SIZES.map((c) => (
+            <button key={c.id} className={'size-opt' + (c.id === cardSize ? ' on' : '')} onClick={() => pick(c.id)}>
+              <span className="size-shape" style={{ aspectRatio: `${c.w} / ${c.h}` }} />
+              <span>{c.label}<small>{c.note}</small></span>
+            </button>
+          ))}
+          <p className="muted">You can change it any time: the design is scaled to fit, and Undo brings the old size back.</p>
+        </div>
+      )}
+    </div>
+  );
+}
+
 function BgPicker() {
   const bg = useStore((s) => s.bg);
   const setBg = useStore((s) => s.setBg);
@@ -523,13 +550,16 @@ export function TopBar() {
         <button className="btn" onClick={() => useStore.getState().resetCard()} title="Put the card back flat, the way it started">🎯 Reset rotation</button>
         <button className="btn" onClick={() => useStore.getState().putBackAll()} title="Every tool goes back to its usual place">🧹 Put all tools back</button>
         <ZoomControls />
+        <CardSizePicker />
         <BgPicker />
         <KeysHelp />
       </div>
-      {/* the logo (the user's picture, unchanged) is the menu button */}
-      <button className={'menu-btn logo-btn' + (zoomed ? ' gone' : '')} onClick={() => setMenu(!menuOpen)} aria-label="Open menu" aria-expanded={menuOpen} aria-hidden={zoomed} tabIndex={zoomed ? -1 : 0} title="Menu – account, save, portfolio, export, card size…">
-        <img src="/logo.jpeg" alt="GIFt it! – open the menu" />
-      </button>
+      {/* top-right corner: the logo (the user's picture, unchanged) = the menu button */}
+      <div className={'corner' + (zoomed ? ' gone' : '')} aria-hidden={zoomed}>
+        <button className="menu-btn logo-btn" onClick={() => setMenu(!menuOpen)} aria-label="Open menu" aria-expanded={menuOpen} tabIndex={zoomed ? -1 : 0} title="Menu – account, save, portfolio, export…">
+          <img src="/logo.jpeg" alt="GIFt it! – open the menu" />
+        </button>
+      </div>
     </header>
   );
 }

@@ -11,6 +11,8 @@ public class User
     public string DisplayName { get; set; } = "";
     public string PasswordHash { get; set; } = "";
     public DateTime BirthDate { get; set; }
+    /// <summary>Profile photo chosen by the user (small square JPEG/PNG data URL), "" = show the initial.</summary>
+    public string Avatar { get; set; } = "";
     public DateTime CreatedAt { get; set; } = DateTime.UtcNow;
 }
 
@@ -61,4 +63,5 @@ public class CardShape
 
 public record RegisterRequest(string Email, string DisplayName, string Password, DateTime BirthDate);
 public record LoginRequest(string Email, string Password);
+public record AvatarRequest(string? Avatar);
 public record DesignRequest(string? Title, string CardSize, string Background, string Image, string? Mask, string Thumbnail, List<string>? Texts, Dictionary<string, string>? Layers, List<string>? Palette = null, List<CardShape>? Shapes = null);

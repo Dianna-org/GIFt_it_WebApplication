@@ -1,13 +1,11 @@
 import { useStore } from '../store.js';
-import { CARD_SIZES } from '../config.js';
 import { saveDesign, confirmDiscard, eraseAllWithConfirm } from '../actions.js';
+import { AvatarEditor } from './Avatar.jsx';
 
 export function Menu() {
   const open = useStore((s) => s.menuOpen);
   const setMenu = useStore((s) => s.setMenu);
   const setPanel = useStore((s) => s.setPanel);
-  const cardSize = useStore((s) => s.cardSize);
-  const changeCardSize = useStore((s) => s.changeCardSize);
   const user = useStore((s) => s.user);
   const setSession = useStore((s) => s.setSession);
   const title = useStore((s) => s.title);
@@ -17,8 +15,6 @@ export function Menu() {
 
   const hasWork = () => useStore.getState().paper.touched;
 
-  // Size can change at any time: the design is scaled to fit, and Undo brings the old size back.
-  const pickSize = (id) => { if (id !== cardSize) changeCardSize(id); };
 
   return (
     <aside className={'drawer' + (open ? ' open' : '')} aria-hidden={!open}>
@@ -27,23 +23,19 @@ export function Menu() {
         <button className="btn icon" onClick={() => setMenu(false)} aria-label="Close menu">✕</button>
       </div>
 
-      <section>
-        <h3>Card size</h3>
-        {CARD_SIZES.map((c) => (
-          <label key={c.id} className={'radio' + (cardSize === c.id ? ' on' : '')}>
-            <input type="radio" name="size" checked={cardSize === c.id} onChange={() => pickSize(c.id)} />
-            <span>{c.label}<small>{c.note}</small></span>
-          </label>
-        ))}
-      </section>
-
+      {/* the card size moved to the "📐" button in the top bar (round 30) */}
       <section>
         <h3>Account</h3>
         {user ? (
-          <>
-            <p className="muted">Signed in as <b>{user.displayName}</b></p>
+          <div className="account-card">
+            <AvatarEditor user={user} />
+            <div className="who">
+              <small>Signed in as</small>
+              <b>{user.displayName}</b>
+              <span className="email">{user.email}</span>
+            </div>
             <button className="btn wide" onClick={() => setSession(null, null)}>Log out</button>
-          </>
+          </div>
         ) : (
           <>
             <p className="muted">Without an account you can still make cards, but they won’t be saved when you leave.</p>

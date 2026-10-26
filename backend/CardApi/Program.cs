@@ -83,7 +83,9 @@ string CreateToken(User u)
     return new System.IdentityModel.Tokens.Jwt.JwtSecurityTokenHandler().WriteToken(token);
 }
 
-object UserDto(User u) => new { id = u.Id, email = u.Email, displayName = u.DisplayName };
+object UserDto(User u) => new { id = u.Id, email = u.Email, displayName = u.DisplayName, avatar = u.Avatar ?? "" };
+
+const int MaxAvatarChars = 300_000; // a 256 px JPEG is ~20-60 KB; this leaves plenty of room
 
 app.MapGet("/api/health", () => Results.Ok(new { status = "ok" }));
 
@@ -123,6 +125,19 @@ auth.MapPost("/login", async (LoginRequest r, IMongoCollection<User> users, IPas
         return Results.Json(new { error = "Incorrect email or password." }, statusCode: 401);
     return Results.Ok(new { token = CreateToken(user), user = UserDto(user) });
 });
+
+// Profile photo: set (small JPEG/PNG data URL made in the browser) or remove ("" = show the initial again).
+app.MapPut("/api/account/avatar", async (AvatarRequest r, ClaimsPrincipal p, IMongoCollection<User> users) =>
+{
+    var avatar = r.Avatar ?? "";
+    if (avatar.Length > 0 && (avatar.Length > MaxAvatarChars ||
+        !(avatar.StartsWith("data:image/jpeg;base64,") || avatar.StartsWith("data:image/png;base64,"))))
+        return Results.BadRequest(new { error = "Please choose a JPEG or PNG picture (it is made smaller automatically)." });
+    var uid = p.FindFirstValue(ClaimTypes.NameIdentifier)!;
+    var user = await users.FindOneAndUpdateAsync(u => u.Id == uid, Builders<User>.Update.Set(u => u.Avatar, avatar),
+        new FindOneAndUpdateOptions<User> { ReturnDocument = ReturnDocument.After });
+    return user is null ? Results.NotFound() : Results.Ok(new { user = UserDto(user) });
+}).RequireAuthorization();
 
 var designsApi = app.MapGroup("/api/designs").RequireAuthorization();
 

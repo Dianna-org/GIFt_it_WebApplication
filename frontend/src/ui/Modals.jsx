@@ -1,3 +1,4 @@
+import { Avatar } from './Avatar.jsx';
 import { useEffect, useRef, useState } from 'react';
 import { api } from '../api.js';
 import { useStore } from '../store.js';
@@ -89,6 +90,19 @@ export function PortfolioModal() {
 
   const load = () => api.listDesigns().then(setData).catch((e) => setErr(e.message));
   useEffect(() => { if (user) load(); else setPanel('auth'); }, []); // eslint-disable-line
+  // a page of its own (round 30): Esc or the browser's Back button returns to the card
+  useEffect(() => {
+    const close = () => { if (useStore.getState().panel === 'portfolio') setPanel(null); };
+    const key = (e) => { if (e.key === 'Escape' && !useStore.getState().dialog) close(); };
+    history.pushState({ page: 'portfolio' }, '');
+    window.addEventListener('popstate', close);
+    window.addEventListener('keydown', key);
+    return () => {
+      window.removeEventListener('popstate', close);
+      window.removeEventListener('keydown', key);
+      if (history.state?.page === 'portfolio') history.back(); // closed with a button: drop the extra history step
+    };
+  }, []); // eslint-disable-line
 
   const open = async (id, thenExport) => {
     if (!(await confirmDiscard('Opening a design replaces the card you are working on. Discard unsaved changes?'))) return;
@@ -109,13 +123,21 @@ export function PortfolioModal() {
   };
 
   return (
-    <Modal title="My portfolio" onClose={() => setPanel(null)} wide>
+    <div className="page portfolio-page" role="dialog" aria-modal="true" aria-label="My portfolio">
+      <header className="page-head">
+        <button className="btn back" onClick={() => setPanel(null)} title="Back to the card (Esc)">← Back to my card</button>
+        <img className="page-logo" src="/logo.jpeg" alt="GIFt it!" />
+        <div className="page-title">
+          <h1>My portfolio</h1>
+          {user && <p className="page-user"><Avatar user={user} size={28} />{user.displayName}{data ? ` · ${data.designs.length} of ${data.max} cards saved · only you can see these` : ''}</p>}
+        </div>
+      </header>
+      <main className="page-body">
       {err && <p className="error">{err}</p>}
       {!data && !err && <p className="muted">Loading…</p>}
       {data && (
         <>
-          <p className="muted">{data.designs.length} of {data.max} slots used · only you can see these.</p>
-          {!data.designs.length && <p className="empty-note">Nothing saved yet. Make a card and use “Save to my portfolio”.</p>}
+          {!data.designs.length && <p className="empty-note">Nothing saved yet. Make a card and use “Save to my portfolio” in the menu.</p>}
           <div className="portfolio">
             {data.designs.map((d) => (
               <figure key={d.id} className="slot">
@@ -134,7 +156,8 @@ export function PortfolioModal() {
           </div>
         </>
       )}
-    </Modal>
+      </main>
+    </div>
   );
 }
 

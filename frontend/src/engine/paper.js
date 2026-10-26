@@ -1094,14 +1094,24 @@ export class CardPaper {
     const shapes = FACES.flatMap((f) => this.faces[f].shapes.map((x) => ({ ...cleanShape(x), face: f })));
     return { image: png(this.flatFace('inside')), layers, texts: this.texts, shapes };
   }
-  thumbnail(maxW = 360) {
-    const f = this.flatFace('inside', 0.3);
-    const c = makeCanvas(maxW, Math.round((maxW * this.h) / this.w));
+  /**
+   * Portfolio picture (round 30): both sides of the sheet – the outside (back + front cover) on top, the
+   * inside spread below – big enough for the full-screen portfolio page.
+   */
+  thumbnail(maxW = 900) {
+    const pad = Math.round(maxW * 0.03), fw = maxW - pad * 2, fh = Math.round((fw * this.h) / this.w);
+    const c = makeCanvas(maxW, fh * 2 + pad * 3);
     const g = ctx2d(c);
     g.fillStyle = '#efe8d6'; g.fillRect(0, 0, c.width, c.height);
-    g.drawImage(f, 0, 0, c.width, c.height);
-    return c.toDataURL('image/jpeg', 0.82);
+    ['outside', 'inside'].forEach((face, i) => {
+      const y = pad + i * (fh + pad);
+      g.save(); g.shadowColor = 'rgba(60, 40, 0, 0.25)'; g.shadowBlur = pad * 0.6; g.shadowOffsetY = pad * 0.15;
+      g.fillStyle = '#fff'; g.fillRect(pad, y, fw, fh); g.restore();
+      g.drawImage(this.flatFace(face, 0.3), pad, y, fw, fh);
+    });
+    return c.toDataURL('image/jpeg', 0.84);
   }
+
   async load(design) {
     const loadImg = (u) => new Promise((res, rej) => { const i = new Image(); i.onload = () => res(i); i.onerror = rej; i.src = u; });
     this.cancelLive(); this.choice = null;

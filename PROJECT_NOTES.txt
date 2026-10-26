@@ -1,6 +1,6 @@
 GIFt it! (formerly Card Studio) – PROJECT NOTES (memory file for future sessions)
 ====================================================================
-Last updated: 2026-10-26 (round 29).   Location: /home/dia/Documents/MSA_WebApplication/PROJECT_NOTES.txt
+Last updated: 2026-10-26 (round 31).   Location: /home/dia/Documents/MSA_WebApplication/PROJECT_NOTES.txt
 Read this first before changing anything. Keep it up to date after every change round.
 
 --------------------------------------------------------------------
@@ -11,7 +11,7 @@ Read this first before changing anything. Keep it up to date after every change 
   candles and flowers, "GIFt it!" in gold). frontend/public/logo.jpeg is a byte-for-byte copy (cmp-checked)
   and is used everywhere as it is: since round 27 the logo IS THE MENU BUTTON in the top-right corner
   (button.menu-btn.logo-btn with the <img>, 140 px, 88 px under 720 px wide (round 29); HIDDEN WHILE ZOOMED IN
-  (class .gone = fades out but keeps its place, not clickable, not focusable) so it isn't pressed by accident; hover lifts it a little; the old
+  (the whole top-right .corner – the logo – gets class .gone = fades out but keeps its place, not clickable, not focusable) so it isn't pressed by accident; hover lifts it a little; the old
   round ☰ button and the left logo are gone), no crop, no rounded corners, browser tab
   icon and apple-touch-icon (index.html points straight at /logo.jpeg), README. NO resized/edited copies –
   the user insisted: "keep the photo as is, don't change anything". To change the logo: copy the new file
@@ -46,7 +46,7 @@ Read this first before changing anything. Keep it up to date after every change 
 - Tests:
       docker build --target test frontend     (Vitest, 16 tests, frontend/src/engine/geometry.test.js)
       docker build --target test backend      (xUnit, 15 tests, backend/CardApi.Tests/RulesTests.cs)
-      scripts/smoke-test.sh                   (23 end-to-end API checks against the running stack)
+      scripts/smoke-test.sh                   (28 end-to-end API checks against the running stack)
   NOTE: /api/auth/* is rate limited to 20 requests/min per IP -> running the smoke test twice in a row can
   fail the "portfolio is private" check with 401/429. Wait a minute. Not a bug.
 - Git: repo on branch main. User commits themselves or asks me ("Commit"). Commit attribution line:
@@ -579,3 +579,45 @@ PERFORMANCE
    logo no longer counts as a screen blocker for putting tools down), README. Verified in the browser: logo
    140 px; zoom in -> logo hidden (visibility hidden, opacity 0), map at 156 px under the top bar (ends 146 px),
    no button covered; zoom out -> logo back. Tests: 56 frontend passed.
+30 (2026-10-26) Four changes (user request; asked: account details in the menu AND in the top bar):
+   1. Logo moved in from the corner: the logo and the new account badge sit in div.corner (margin 10px top,
+      20px right on top of the top bar's padding; 4px/8px on phones). The whole .corner fades away while
+      zoomed in (round 29 behaviour kept).
+   2. Card size is chosen with a "📐 A4/A5/A6/Square" button in the top bar (CardSizePicker in Toolbar.jsx,
+      pop-up with ✕/Esc, a small folded-sheet shape per size, pick -> changeCardSize, undoable as before);
+      the Card size section was removed from the menu (Menu.jsx).
+   3. Account details bigger and more visible: AccountBadge next to the logo (initial in a coloured circle +
+      "SIGNED IN AS" + the name in 18 px; click opens the menu; logged out: "👤 Log in" opens the log-in
+      window; on phones only the circle), and in the menu an .account-card at the top (64 px initial, name
+      24 px, email, Log out).
+   4. Portfolio is a page of its own: PortfolioModal (ui/Modals.jsx) is now a full-screen .page (z-index 25:
+      above the menu, below toasts and confirm dialogs) with a sticky header (logo, "My portfolio", user name +
+      slots used, "← Back to my card") and a grid of big tiles (min 300 px, square pictures). It pushes a
+      browser-history step, so the browser's Back button, Esc or the back button close it (closing with a
+      button removes that history step again). Portfolio pictures: paper.thumbnail() now makes a 900 px
+      picture of BOTH sides (outside on top, inside below) – before it was a 360 px picture of the inside only,
+      which looked empty when only the cover was decorated. Cards saved earlier keep their old picture until
+      they are saved again.
+   Files: ui/Toolbar.jsx, ui/Menu.jsx, ui/Modals.jsx, engine/paper.js (thumbnail), styles.css (.corner,
+   .account-badge, .avatar, .who, .account-card, .pop.sizes/.size-opt/.size-shape, .page*, .portfolio/.slot),
+   scene/Desk.jsx (screen blockers: .corner), README. Verified in the browser with a test account created
+   through the local API (Diana Tester, uitest…@test.local – still in the local database): logo in from the
+   corner, card size pop-up (A4 -> A5, Undo available), badge "Signed in as Diana Tester", menu account box,
+   saved a card, portfolio page full screen, Open loads the card, re-save -> 900x1277 picture with cover +
+   inside, browser Back closes the page, phone layout. Tests: 56 frontend passed.
+31 (2026-10-26) (user request) 1. The "Signed in as" badge next to the logo is removed again (AccountBadge and
+   its styles deleted; account details are only in the menu's account box). 2. Profile photo: the user can
+   use a picture from their computer instead of the initial. ui/Avatar.jsx (new): Avatar (photo or initial),
+   AvatarEditor in the menu's account box (click the round picture with the 📷 mark or "Add a photo" /
+   "Change photo"; "Remove photo"); the chosen file is centre-cropped to a square, drawn at 256x256, checked
+   with the same in-browser picture check as the artwork (checkDrawing, nsfwjs) and sent as a JPEG data URL.
+   Server: User.Avatar (Models.cs), PUT /api/account/avatar (logged in only; "" removes it; only
+   data:image/jpeg or png, at most 300 000 characters), avatar included in the user data from register/login
+   (UserDto) and kept in the saved session (localStorage cardstudio.session). The portfolio page header shows
+   the photo next to the name. 3. Logo further from the corner: .corner margin 22px top / 40px right (phones
+   10px / 16px). Files: ui/Avatar.jsx, ui/Menu.jsx, ui/Modals.jsx, ui/Toolbar.jsx, api.js (setAvatar),
+   styles.css, backend Models.cs + Program.cs, scripts/smoke-test.sh (+5: photo saved, comes with login, bad
+   photo refused, removed, needs a login), README. Verified: smoke test 28 checks passed; in the browser
+   (test account Diana Tester) badge gone, logo further in, menu account box with initial + 📷, a picture fed
+   into the photo chooser -> "Your profile photo is changed.", 256x256 round photo, in the portfolio header,
+   still there after reload, "Remove photo" -> initial again. Tests: 56 frontend passed.
