@@ -134,11 +134,13 @@ export const patternById = (id) => PATTERNS.find((p) => p.id === id) || PATTERNS
  * Stamps a pattern along already-resampled points (spaced `step` apart).
  * opts: size (px), color, seed-driven rng, rainbow (hue changes along the stroke).
  */
-export function stampPattern(g, points, { size, color, rainbow }, rng, patternId) {
+export function stampPattern(g, points, { size, color, rainbow }, rngOne, patternId, { from = 0, to = points.length, rngAt = null } = {}) {
   const p = patternById(patternId);
   const draw = STAMPS[p.id];
   const r = size / 2;
-  points.forEach((pt, i) => {
+  // only stamps [from, to) – a live stroke draws its new part only (round 37); rngAt(i) = randomness per stamp
+  for (let i = from; i < to; i++) {
+    const pt = points[i], rng = rngAt ? rngAt(i) : rngOne;
     const a = points[Math.max(0, i - 1)], b = points[Math.min(points.length - 1, i + 1)];
     const angle = p.turn && points.length > 1 ? Math.atan2(b.y - a.y, b.x - a.x) : (p.id === 'stars' || p.id === 'confetti' ? (rng() - 0.5) * 0.8 : 0);
     const c = rainbow ? hslToHex((i * 32) % 360, 80, 62) : color;
@@ -147,7 +149,7 @@ export function stampPattern(g, points, { size, color, rainbow }, rng, patternId
     g.rotate(angle);
     draw(g, r, c, rng, i);
     g.restore();
-  });
+  }
 }
 
 export function hslToHex(h, s, l) {

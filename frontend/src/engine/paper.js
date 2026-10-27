@@ -1,5 +1,5 @@
 import { cardDims, PAPER_COLOR, TAPE_PATTERNS } from '../config.js';
-import { BLEND, renderStroke, resample, drawSparkle } from './brushes.js';
+import { BLEND, renderStroke, resample, drawSparkle, UNITS, keepUnits, drawStrokeRange } from './brushes.js';
 import { applyStraightness, fitBoxInside, pointInPolygon } from './geometry.js';
 import { smoothNoise } from './random.js';
 import { stickerCanvas } from './stickers.js';
@@ -207,6 +207,7 @@ export class CardPaper {
     this.cutChanged(); // cached reads of the cut shape are rebuilt lazily
     this.isCut = false;
     this.stroke = makeCanvas(this.w, this.h);
+    this.strokeBase = makeCanvas(this.w, this.h); // the finished part of the live stroke (drawn once)
     this.scratch = makeCanvas(this.w, this.h);
     this.scratch2 = makeCanvas(this.w, this.h);
     this.live = null;
@@ -377,7 +378,7 @@ export class CardPaper {
     }
     this.cut = copyCanvas(old.cut, this.w, this.h);
     this.cutChanged();
-    for (const k of ['stroke', 'scratch', 'scratch2']) this[k] = makeCanvas(this.w, this.h);
+    for (const k of ['stroke', 'strokeBase', 'scratch', 'scratch2']) this[k] = makeCanvas(this.w, this.h);
     this.epoch++;
   }
   resize(sizeId) {
@@ -434,26 +435,77 @@ export class CardPaper {
     }
     return pts;
   }
+  /**
+   * Draws the live stroke onto this.stroke. Round 37: a stroke is no longer re-drawn from its first point
+   * every frame (that made long strokes slower and slower – 2 fps after 10 s of brush circles). The part of
+   * the stroke that can't change any more is drawn ONCE onto this.strokeBase; every frame only the last
+   * stretch is re-drawn (and only that area is marked dirty / uploaded to the GPU).
+   * Strokes whose whole shape still changes (Line shape above 50 = straightened towards a ruler line, or a
+   * "hold to perfect" snap) are drawn whole, as before – those tools are cheap to draw.
+   */
   rerenderLive() {
-    const g = ctx2d(this.stroke);
-    g.clearRect(0, 0, this.w, this.h);
+    const L = this.live;
     const pts = this.shapePoints();
-    this.live.shaped = pts;
-    if (this.live.tool === 'eraser') {
-      g.lineCap = 'round'; g.lineJoin = 'round'; g.strokeStyle = '#000'; g.fillStyle = '#000'; g.lineWidth = this.live.opts.size;
-      g.beginPath(); g.moveTo(pts[0].x, pts[0].y);
-      if (pts.length === 1) g.lineTo(pts[0].x + 0.1, pts[0].y);
-      pts.forEach((p) => g.lineTo(p.x, p.y));
-      g.stroke();
-      this.live.sparkles = [];
-    } else {
-      const out = renderStroke(g, this.live.tool, pts, this.live.opts);
-      this.live.sparkles = out.sparkles || [];
+    L.shaped = pts;
+    const pad = L.opts.size * 1.6 + 16;
+    if (L.tool === 'eraser') return this.rerenderEraser(pts, pad);
+    if (L.perfect || L.opts.straight > 50) { // the whole stroke moves: draw it whole
+      const g = ctx2d(this.stroke);
+      g.clearRect(0, 0, this.w, this.h);
+      L.inc = null;
+      const out = renderStroke(g, L.tool, pts, L.opts);
+      L.sparkles = out.sparkles || [];
+      const r = boundsOf(pts, pad);
+      this.markFace(L.face, unionRect(L.rect, r)); // old extent too: a straightened line can move
+      L.rect = r;
+      return;
     }
-    const r = boundsOf(pts, this.live.opts.size * 1.6 + 16);
-    this.markFace(this.live.face, unionRect(this.live.rect, r)); // old extent too: a straightened line can move
-    this.live.rect = r;
+    const units = UNITS[L.tool](pts, L.opts);
+    if (!L.inc) { // starting (again) to draw incrementally
+      ctx2d(this.strokeBase).clearRect(0, 0, this.w, this.h);
+      ctx2d(this.stroke).clearRect(0, 0, this.w, this.h);
+      if (L.rect) this.markFace(L.face, L.rect);
+      L.inc = { done: 0, sparkles: [], rect: null };
+    }
+    const inc = L.inc;
+    // the start of the stroke can't change any more: draw it for good (in chunks, not every frame)
+    const safe = units.length - keepUnits(L.tool, L.opts);
+    if (safe - inc.done >= 40) {
+      const out = drawStrokeRange(ctx2d(this.strokeBase), L.tool, units, L.opts, inc.done, safe, false);
+      if (out.sparkles) inc.sparkles.push(...out.sparkles);
+      inc.done = safe;
+    }
+    // the last stretch: the area it covers gets the finished part back, then the stretch is drawn on top
+    const r = clampRect(boundsOf(units.slice(Math.max(0, inc.done - 2)), pad), this.w, this.h);
+    const area = r && clampRect(unionRect(inc.rect, r), this.w, this.h);
+    const g = ctx2d(this.stroke);
+    if (area) {
+      g.clearRect(area.x, area.y, area.w, area.h);
+      g.drawImage(this.strokeBase, area.x, area.y, area.w, area.h, area.x, area.y, area.w, area.h);
+    }
+    const out = drawStrokeRange(g, L.tool, units, L.opts, inc.done, units.length, true);
+    L.sparkles = out.sparkles ? inc.sparkles.concat(out.sparkles) : inc.sparkles;
+    if (area) this.markFace(L.face, area);
+    inc.rect = r;
+    L.rect = unionRect(L.rect, r);
   }
+  /** Eraser: only the newest part of its path is drawn each frame (the path only grows). */
+  rerenderEraser(pts, pad) {
+    const L = this.live, g = ctx2d(this.stroke);
+    const from = Math.max(0, (L.erased || 0) - 1);
+    if (!L.erased) g.clearRect(0, 0, this.w, this.h);
+    g.lineCap = 'round'; g.lineJoin = 'round'; g.strokeStyle = '#000'; g.lineWidth = L.opts.size;
+    g.beginPath(); g.moveTo(pts[from].x, pts[from].y);
+    if (pts.length === 1) g.lineTo(pts[0].x + 0.1, pts[0].y);
+    for (let i = from + 1; i < pts.length; i++) g.lineTo(pts[i].x, pts[i].y);
+    g.stroke();
+    L.sparkles = [];
+    const r = boundsOf(pts.slice(from), pad);
+    this.markFace(L.face, r);
+    L.erased = pts.length;
+    L.rect = unionRect(L.rect, r);
+  }
+
   endStroke() {
     if (!this.live) return;
     if (this.live.stale) this.rerenderLive();

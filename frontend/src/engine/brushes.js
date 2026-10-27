@@ -69,91 +69,127 @@ export function resample(pts, step) {
   return out;
 }
 
-const RENDER = {
+/*
+ * Strokes are drawn in two steps (round 37, so long strokes stay fast):
+ *   UNITS[tool](points, opts)  -> the stroke's evenly spaced points ("units"), always the same for the same
+ *                                start of a stroke, so a growing stroke only adds units at the end;
+ *   DRAW[tool](ctx, units, opts, from, to, final) -> draws units [from, to) exactly as the whole stroke
+ *                                would draw them (randomness is per unit, widths depend on the distance
+ *                                from the start, the end of the stroke only tapers when `final`).
+ * The paper draws the finished part of a live stroke once (from..to, final = false) and each frame only
+ * re-draws the last stretch (final = true) – instead of the whole stroke 60 times a second.
+ */
+const unitRng = (seed, i) => makeRng(((seed * 2654435761) ^ (i * 40503 + 0x9e37)) >>> 0);
+
+// a path through units [from - 1, to) – sharing one point with the part before, so the line is unbroken
+function polyline(ctx, u, from, to) {
+  ctx.beginPath();
+  const a = Math.max(0, from - 1);
+  ctx.moveTo(u[a].x, u[a].y);
+  if (to - a === 1) ctx.lineTo(u[a].x + 0.01, u[a].y);
+  for (let i = a + 1; i < to; i++) ctx.lineTo(u[i].x, u[i].y);
+}
+
+const BRUSH_STEP = 2.5, GLITTER_STEP = 1.5, CRAYON_STEP = 1.1;
+const highlighterStep = (size) => Math.max(1, (size * 0.38) / 3);
+const patternStep = (opts) => Math.max(2, opts.size * patternById(opts.pattern).gap * ((opts.spacing ?? 100) / 100));
+
+export const UNITS = {
+  pattern: (pts, opts) => resample(pts, patternStep(opts)),
+  marker: (pts) => pts,
+  highlighter: (pts, { size }) => resample(pts, highlighterStep(size)),
+  crayon: (pts) => resample(pts, CRAYON_STEP),
+  brush: (pts) => resample(pts, BRUSH_STEP),
+  glitter: (pts) => resample(pts, GLITTER_STEP),
+};
+
+/** How many units at the end of a live stroke may still change (they are re-drawn every frame). */
+export function keepUnits(tool, opts) {
+  const step = { pattern: patternStep(opts), marker: 4, highlighter: highlighterStep(opts.size), crayon: CRAYON_STEP, brush: BRUSH_STEP, glitter: GLITTER_STEP }[tool];
+  const endZone = tool === 'brush' ? opts.size * 1.9 : 0; // the brush tapers off at the end
+  return Math.ceil((endZone + 16) / step) + 3;
+}
+
+const DRAW = {
   // pattern pen: shapes stamped along the stroke (engine/patterns.js)
-  pattern(ctx, pts, opts) {
-    const rng = makeRng(opts.seed);
-    const p = patternById(opts.pattern);
-    const step = Math.max(2, opts.size * p.gap * ((opts.spacing ?? 100) / 100));
-    stampPattern(ctx, resample(pts, step), opts, rng, p.id);
+  pattern(ctx, u, opts, from, to) {
+    stampPattern(ctx, u, opts, null, opts.pattern, { from, to, rngAt: (i) => unitRng(opts.seed, i) });
   },
 
-  marker(ctx, pts, { size, color }) {
+  marker(ctx, u, { size, color }, from, to) {
     ctx.lineCap = 'round'; ctx.lineJoin = 'round';
     ctx.strokeStyle = color; ctx.lineWidth = size;
-    smoothPath(ctx, pts); ctx.stroke();
+    if (from === 0 && to === u.length) smoothPath(ctx, u); else polyline(ctx, u, from, to);
+    ctx.stroke();
   },
 
-  highlighter(ctx, pts, { size, color }) {
+  highlighter(ctx, u, { size, color }, from, to) {
     // chisel tip: a flat rectangle held at 45 degrees
     ctx.fillStyle = color;
-    const w = size, h = size * 0.38;
-    const ang = -Math.PI / 4;
-    const dense = resample(pts, Math.max(1, h / 3));
-    const stampAt = (p) => {
-      ctx.save(); ctx.translate(p.x, p.y); ctx.rotate(ang);
+    const w = size, h = size * 0.38, ang = -Math.PI / 4;
+    for (let i = from; i < to; i++) {
+      ctx.save(); ctx.translate(u[i].x, u[i].y); ctx.rotate(ang);
       ctx.fillRect(-w / 2, -h / 2, w, h); ctx.restore();
-    };
-    dense.forEach(stampAt);
-    if (dense.length === 1) stampAt(dense[0]);
+    }
   },
 
-  crayon(ctx, pts, { size, color, seed }) {
-    const rng = makeRng(seed);
-    const dense = resample(pts, 1.1);
+  crayon(ctx, u, { size, color, seed }, from, to) {
     const r = size / 2;
     const dots = Math.max(5, Math.round(size * 0.9));
-    const draw = (p) => {
+    for (let k = from; k < to; k++) {
+      const p = u[k], rng = unitRng(seed, k);
       for (let i = 0; i < dots; i++) {
         const a = rng() * Math.PI * 2, d = Math.sqrt(rng()) * r;
         const x = p.x + Math.cos(a) * d, y = p.y + Math.sin(a) * d;
+        const alpha = 0.45 + rng() * 0.55, dark = rng() < 0.12, s = 1 + rng() * 1.3;
         // paper tooth: the same spots stay bare, so crossing strokes fill the gaps
         if (grain(x, y) > 0.68) continue;
-        ctx.globalAlpha = 0.45 + rng() * 0.55;
-        ctx.fillStyle = rng() < 0.12 ? shade(color, 0.25) : color;
-        const s = 1 + rng() * 1.3;
+        ctx.globalAlpha = alpha;
+        ctx.fillStyle = dark ? shade(color, 0.25) : color;
         ctx.fillRect(x, y, s, s);
       }
-    };
-    dense.forEach(draw);
+    }
     ctx.globalAlpha = 1;
   },
 
-  brush(ctx, pts, { size, color, seed }) {
-    const rng = makeRng(seed);
-    const dense = resample(pts, 2.5);
-    if (dense.length < 2) {
-      ctx.beginPath(); ctx.arc(pts[0].x, pts[0].y, size / 2, 0, Math.PI * 2); ctx.fillStyle = color; ctx.fill();
+  brush(ctx, u, { size, color, seed }, from, to, final) {
+    const n = u.length;
+    if (n < 2) {
+      if (from === 0) { ctx.beginPath(); ctx.arc(u[0].x, u[0].y, size / 2, 0, Math.PI * 2); ctx.fillStyle = color; ctx.fill(); }
       return;
     }
-    const n = dense.length;
+    const rng = makeRng(seed);
     const bristles = Math.max(4, Math.round(size / 2.2));
     ctx.lineCap = 'round'; ctx.lineJoin = 'round';
-    // direction normals
-    const normals = dense.map((p, i) => {
-      const a = dense[Math.max(0, i - 1)], b = dense[Math.min(n - 1, i + 1)];
+    const a0 = Math.max(0, from - 1);
+    // direction normals (from the neighbouring units)
+    const normal = (i) => {
+      const a = u[Math.max(0, i - 1)], b = u[Math.min(n - 1, i + 1)];
       const l = Math.hypot(b.x - a.x, b.y - a.y) || 1;
       return { x: -(b.y - a.y) / l, y: (b.x - a.x) / l };
-    });
+    };
+    const normals = [];
+    for (let i = a0; i < to; i++) normals.push(normal(i));
     for (let k = 0; k < bristles; k++) {
       const off = (k / (bristles - 1) - 0.5) * 2; // -1..1 across the brush
       const phase = rng() * 100;
       const lw = Math.max(1.2, (size / bristles) * (1.4 + rng() * 0.8));
       const tone = (rng() - 0.5) * 0.28;
+      const alpha = 0.65 + rng() * 0.35;
       ctx.strokeStyle = shade(color, tone);
       ctx.lineWidth = lw;
-      ctx.globalAlpha = 0.65 + rng() * 0.35;
+      ctx.globalAlpha = alpha;
       ctx.beginPath();
       let started = false;
-      for (let i = 0; i < n; i++) {
-        const u = i / (n - 1);
-        // uneven pressure: width swells and thins along the stroke, tapering at both ends
-        const press = 0.62 + 0.38 * smoothNoise(null, u * 6 + phase * 0.01 + seed * 0.001);
-        const taper = Math.min(1, u * 9, (1 - u) * 6 + 0.25);
+      for (let i = a0; i < to; i++) {
+        const dist = i * BRUSH_STEP;
+        // uneven pressure: width swells and thins along the stroke, tapering in at the start and out at the end
+        const press = 0.62 + 0.38 * smoothNoise(null, dist * 0.016 + phase * 0.01 + seed * 0.001);
+        const taper = Math.min(1, 0.12 + dist / (size * 1.6), final ? ((n - 1 - i) * BRUSH_STEP) / (size * 1.4) + 0.25 : 1);
         const spread = (size / 2) * off * press * Math.max(0.15, taper);
         const jitter = smoothNoise(null, i * 0.35 + phase) * lw * 0.6;
-        const x = dense[i].x + normals[i].x * (spread + jitter);
-        const y = dense[i].y + normals[i].y * (spread + jitter);
+        const nm = normals[i - a0];
+        const x = u[i].x + nm.x * (spread + jitter), y = u[i].y + nm.y * (spread + jitter);
         // dry-brush gaps
         const gap = smoothNoise(null, i * 0.2 + phase * 3) > 0.82 && Math.abs(off) > 0.6;
         if (gap) { started = false; continue; }
@@ -164,16 +200,20 @@ const RENDER = {
     ctx.globalAlpha = 1;
   },
 
-  glitter(ctx, pts, { size, color, seed }) {
-    const rng = makeRng(seed);
+  glitter(ctx, u, { size, color, seed }, from, to) {
+    // the gel line goes BEHIND what is already drawn, so it never covers the glitter of the part before
+    ctx.save();
+    ctx.globalCompositeOperation = 'destination-over';
     ctx.lineCap = 'round'; ctx.lineJoin = 'round';
     ctx.strokeStyle = color; ctx.lineWidth = size;
-    smoothPath(ctx, pts); ctx.stroke();
+    polyline(ctx, u, from, to); ctx.stroke();
+    ctx.restore();
     // grainy glitter flecks inside the line
-    const dense = resample(pts, 1.5);
     const sparkles = [];
-    for (const p of dense) {
-      for (let i = 0; i < Math.max(2, size * 0.5); i++) {
+    const flecks = Math.max(2, size * 0.5);
+    for (let k = from; k < to; k++) {
+      const p = u[k], rng = unitRng(seed, k);
+      for (let i = 0; i < flecks; i++) {
         const a = rng() * Math.PI * 2, d = Math.sqrt(rng()) * (size / 2);
         const x = p.x + Math.cos(a) * d, y = p.y + Math.sin(a) * d;
         const roll = rng();
@@ -189,10 +229,17 @@ const RENDER = {
   },
 };
 
-/** Draw one stroke (already straightened) onto an empty layer. Returns optional sparkles for glitter. */
+/** Draw units [from, to) of a stroke (see above). Returns optional sparkles for glitter. */
+export function drawStrokeRange(ctx, tool, units, opts, from, to, final) {
+  if (!units.length || to <= from) return {};
+  return DRAW[tool](ctx, units, opts, from, to, final) || {};
+}
+
+/** Draw one whole stroke (already straightened) onto an empty layer. Returns optional sparkles for glitter. */
 export function renderStroke(ctx, tool, points, opts) {
   if (!points.length) return {};
-  return RENDER[tool](ctx, points, opts) || {};
+  const u = UNITS[tool](points, opts);
+  return drawStrokeRange(ctx, tool, u, opts, 0, u.length, true);
 }
 
 let sparkleSprite = null;
