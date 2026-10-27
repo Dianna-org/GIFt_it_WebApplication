@@ -5,11 +5,12 @@ import { RoomEnvironment } from 'three/examples/jsm/environments/RoomEnvironment
 import { useStore, ZOOM_ANIM_MS } from '../store.js';
 import { cardDims, CANVAS_PX_W, TAPE_PATTERNS } from '../config.js';
 import { placeTextBox } from '../engine/paper.js';
+import { canUse, rollPattern } from '../shop/catalog.js';
 import { Card, canvasToWorld, cardCutOnDesk, cardIsOpen, cardMeshes, putCardDown, tapeCutOnDesk } from './Card.jsx';
 import { movePointer, pointer } from './pointer.js';
 import { aimCamera, hitCardPlane, inZoomedView, offsetOf, SPLIT, startZoomPan, zoomView } from './zoom.js';
 import {
-  Brush, Crayon, Eraser, GlitterPen, Highlighter, HeldSticker, Marker, PaintBucket, PatternPen, Scissors, ShapeStencil, StickerSheet, TapeRoll, TextPad,
+  Brush, CalligraphyPen, Crayon, Eraser, GlitterPen, Highlighter, HeldSticker, Marker, PaintBucket, PatternPen, Scissors, ShapeStencil, SprayCan, StickerSheet, TapeRoll, TextPad,
 } from './models.jsx';
 
 const Z = new THREE.Vector3(0, 0, 1);
@@ -27,6 +28,9 @@ const DEFS = [
   { id: 'brush', tool: 'brush', kind: 'pen', len: 2.9, home: [-11.25, 1.35], yaw: -0.02, r: 0.12, label: 'Paint brush' },
   { id: 'pattern', tool: 'pattern', kind: 'pen', len: 2.2, home: [-11.2, -0.65], yaw: -0.04, r: 0.15, label: 'Pattern pen – hearts, stars, flowers, bubbles…' },
   { id: 'glitter', tool: 'glitter', kind: 'pen', len: 2.54, home: [-11.25, 0.35], yaw: 0.03, r: 0.14, label: 'Glitter gel pen' },
+  // gift shop tools (round 41): only on the desk of an account that bought them (`item`)
+  { id: 'spray', tool: 'spray', kind: 'pen', len: 1.5, width: 0.6, home: [-8.6, -0.6], yaw: -0.05, r: 0.28, item: 'tool-spray', label: 'Spray can – soft speckled spray' },
+  { id: 'calligraphy', tool: 'calligraphy', kind: 'pen', len: 2.4, home: [-8.75, -1.7], yaw: 0.03, r: 0.09, item: 'tool-calligraphy', label: 'Calligraphy pen – thick and thin strokes' },
   ...TAPE_PATTERNS.map((p, i) => ({
     id: 'tape-' + p.id, tool: 'tape', variant: p.id, kind: 'roll', label: `Washi tape – ${p.label}`,
     home: [-7.0 + (i % 2) * 1.5, 4.0 - Math.floor(i / 2) * 1.45],
@@ -39,6 +43,8 @@ const DEFS = [
   { id: 'shapes', tool: 'shapes', kind: 'pad', home: [-5.5, -3.35], yaw: 0.1, label: 'Shapes – squares, circles, stars, hearts, presents…' },
 ];
 const DESK_CENTRE_X = -3.2; // the camera looks between the tools and the card
+/** Is this tool on the desk? Gift shop tools only for their owner (or while trying them, round 42). */
+const onDesk = (def, s) => !def.item || canUse(s.user, def.item);
 
 /** Id of the desk item that is in the user's hand. */
 export function heldToolId(s) {
@@ -151,7 +157,7 @@ function cardOutline() {
 /** Footprints (with bounding boxes) of the tools lying on the desk, except the ones listed. */
 function lyingFootprints(s, exclude = [], spots = s.spots) {
   const inHand = heldToolId(s), pendingRoll = s.paper.pendingTape ? 'tape-' + s.paper.pendingTape.pattern.id : null;
-  return DEFS.filter((d) => d.id !== inHand && d.id !== pendingRoll && !exclude.includes(d.id)).map((d) => {
+  return DEFS.filter((d) => onDesk(d, s) && d.id !== inHand && d.id !== pendingRoll && !exclude.includes(d.id)).map((d) => {
     const pts = toolFootprint(d, spots[d.id]).pts;
     return { pts, box: boxOf(pts) };
   });
@@ -257,7 +263,7 @@ function KeepToolsVisible() {
     const cardCentre = { x: all.reduce((a, p) => a + p.x, 0) / all.length, y: all.reduce((a, p) => a + p.y, 0) / all.length };
     const inHand = heldToolId(s), pendingRoll = s.paper.pendingTape ? 'tape-' + s.paper.pendingTape.pattern.id : null;
     let spots = null;
-    const lying = DEFS.filter((d) => d.id !== inHand && d.id !== pendingRoll);
+    const lying = DEFS.filter((d) => onDesk(d, s) && d.id !== inHand && d.id !== pendingRoll);
     for (const def of lying) {
       const spot = (spots || s.spots)[def.id];
       const fp = toolFootprint(def, spot);
@@ -314,6 +320,7 @@ function ToolItem({ def }) {
   const color = useStore((s) => s.color);
   const spot = useStore((s) => s.spots[def.id]);
   const pendingHere = useStore((s) => def.kind === 'roll' && s.paper.pendingTape?.pattern.id === def.variant);
+  useStore((s) => (def.kind === 'roll' ? `${s.rollDesign[def.variant] || ''}|${(s.user?.owned || []).length}|${s.trial?.id || ''}` : '')); // re-draw a roll when its design changes
   const [, bump] = useState(0);
   const paper = useStore((s) => s.paper);
   // only the tape rolls need to know when tape is pulled out
@@ -480,13 +487,15 @@ function ToolItem({ def }) {
     case 'brush': model = <Brush color={color} />; break;
     case 'glitter': model = <GlitterPen color={color} />; break;
     case 'pattern': model = <PatternPen color={color} />; break;
+    case 'calligraphy': model = <CalligraphyPen color={color} />; break;
+    case 'spray': model = <SprayCan color={color} />; break;
     case 'bucket': model = <PaintBucket color={color} />; break;
     case 'eraser': model = <Eraser />; break;
     case 'scissors': model = <Scissors openRef={open} />; break;
     case 'sticker': model = <StickerSheet />; break;
     case 'text': model = <TextPad />; break;
     case 'shapes': model = <ShapeStencil />; break;
-    default: model = <TapeRoll pattern={def.variant} spinRef={spin} />;
+    default: model = <TapeRoll pattern={rollPattern(useStore.getState(), def.variant)} spinRef={spin} />;
   }
   return (
     <group ref={ref} position={startPose.pos} quaternion={startPose.quat} scale={def.scale || 1} {...(held && def.kind !== 'sheet' ? {} : events)}>
@@ -920,6 +929,13 @@ function useDropOnDesk() {
 
 export function Desk() {
   const bg = useStore((s) => s.bg);
+  const owned = useStore((s) => (s.user?.owned || []).join(',') + '|' + (s.trial?.id || ''));
+  const defs = useMemo(() => DEFS.filter((d) => onDesk(d, useStore.getState())), [owned]); // eslint-disable-line react-hooks/exhaustive-deps
+  // logged out (or another account) while holding a shop tool: it leaves the desk, so it leaves the hand too
+  useEffect(() => {
+    const s = useStore.getState(), def = DEFS.find((d) => d.tool === s.tool && d.item);
+    if (def && !onDesk(def, s)) s.clearTool();
+  }, [owned]);
   useDropOnDesk();
   useWheelZoom();
   return (
@@ -948,7 +964,7 @@ export function Desk() {
         <directionalLight position={[7, 4, 6]} intensity={0.35} />
         <DeskPlane />
         <Card />
-        {DEFS.map((d) => <ToolItem key={d.id} def={d} />)}
+        {defs.map((d) => <ToolItem key={d.id} def={d} />)}
         <PeeledSticker />
       </Canvas>
     </div>

@@ -1,4 +1,5 @@
 import { cardDims, PAPER_COLOR, TAPE_PATTERNS } from '../config.js';
+import { EXTRA_TAPES, registerTapeLookup } from '../shop/catalog.js';
 import { BLEND, renderStroke, resample, drawSparkle, UNITS, keepUnits, drawStrokeRange } from './brushes.js';
 import { applyStraightness, fitBoxInside, pointInPolygon } from './geometry.js';
 import { smoothNoise } from './random.js';
@@ -59,7 +60,8 @@ function boundsOf(points, pad) {
 // ----- tape pattern tiles -----
 const tileCache = new Map();
 function tapeTile(pattern) {
-  if (tileCache.has(pattern.id)) return tileCache.get(pattern.id);
+  const key = `${pattern.kind}|${pattern.base}|${pattern.ink}`; // a roll can wear another design (round 40)
+  if (tileCache.has(key)) return tileCache.get(key);
   const s = 56;
   const c = makeCanvas(s, s);
   const g = ctx2d(c);
@@ -105,13 +107,14 @@ function tapeTile(pattern) {
       });
       break;
   }
-  tileCache.set(pattern.id, c);
+  tileCache.set(key, c);
   return c;
 }
 
 export function tapePatternById(id) {
-  return TAPE_PATTERNS.find((p) => p.id === id) || TAPE_PATTERNS[0];
+  return TAPE_PATTERNS.find((p) => p.id === id) || EXTRA_TAPES.find((p) => p.id === id) || TAPE_PATTERNS[0];
 }
+registerTapeLookup(tapePatternById);
 
 function polyPath(g, poly) {
   g.beginPath();
@@ -178,9 +181,13 @@ class Face {
   }
 }
 
+const newCardKey = () => 'c-' + Array.from(crypto.getRandomValues(new Uint8Array(12)), (b) => (b % 36).toString(36)).join('');
+
 export class CardPaper {
   constructor(sizeId) {
     this.listeners = new Set();
+    this.paperColor = PAPER_COLOR; // colour of the card's paper (coloured paper from the gift shop, round 40)
+    this.cardKey = newCardKey(); // this card's own id: downloading it earns gift points once (round 42)
     this.history = [];
     this.historyBytes = 0;
     this.epoch = 0;
@@ -879,7 +886,7 @@ export class CardPaper {
     if (rect) { for (const c of [g, s0]) { c.beginPath(); c.rect(rect.x, rect.y, rect.w, rect.h); c.clip(); } }
     g.globalCompositeOperation = 'source-over';
     g.clearRect(0, 0, this.w, this.h);
-    g.fillStyle = PAPER_COLOR; g.fillRect(0, 0, this.w, this.h);
+    g.fillStyle = this.paperColor; g.fillRect(0, 0, this.w, this.h);
     g.drawImage(F.objects, 0, 0);
     const live = this.live && this.live.face === face ? this.live : null;
     if (live && live.tool === 'eraser') {
@@ -1079,7 +1086,7 @@ export class CardPaper {
     const F = this.faces[face];
     const c = makeCanvas(this.w, this.h);
     const g = ctx2d(c);
-    g.fillStyle = PAPER_COLOR; g.fillRect(0, 0, this.w, this.h);
+    g.fillStyle = this.paperColor; g.fillRect(0, 0, this.w, this.h);
     g.drawImage(F.objects, 0, 0);
     g.drawImage(F.ink, 0, 0);
     if (F.shapes.length) this.paintShapes(g, face);
@@ -1168,7 +1175,11 @@ export class CardPaper {
     }
     if (this.isCut) layers.cut = png(this.cut);
     const shapes = FACES.flatMap((f) => this.faces[f].shapes.map((x) => ({ ...cleanShape(x), face: f })));
-    return { image: png(this.flatFace('inside')), layers, texts: this.texts, shapes };
+    return { image: png(this.flatFace('inside')), layers, texts: this.texts, shapes, paperColor: this.paperColor, cardKey: this.cardKey };
+  }
+  /** Something is on the card (drawing, stickers, tape, text, shapes) – only then a download earns points. */
+  isDecorated() {
+    return FACES.some((f) => this.faces[f].used || this.faces[f].shapes.length > 0);
   }
   /**
    * Portfolio picture (round 36): the card the way it first appears – folded shut, front cover facing you –
@@ -1196,6 +1207,8 @@ export class CardPaper {
     const loadImg = (u) => new Promise((res, rej) => { const i = new Image(); i.onload = () => res(i); i.onerror = rej; i.src = u; });
     this.cancelLive(); this.choice = null;
     this.history = []; this.historyBytes = 0;
+    // the same card keeps its key; cards saved before round 42 had none: "d-<design id>"
+    if (design.cardKey) this.cardKey = design.cardKey; else if (design.id) this.cardKey = 'd-' + design.id;
     const L = design.layers || {};
     const put = async (canvas, url) => {
       const g = ctx2d(canvas); g.clearRect(0, 0, this.w, this.h);
@@ -1221,7 +1234,14 @@ export class CardPaper {
     if (L.cut) { g.clearRect(0, 0, this.w, this.h); g.drawImage(await loadImg(L.cut), 0, 0, this.w, this.h); this.isCut = true; }
     else { g.fillStyle = '#000'; g.fillRect(0, 0, this.w, this.h); this.isCut = false; }
     this.cutChanged();
+    this.paperColor = /^#[0-9a-f]{6}$/i.test(design.paperColor || '') ? design.paperColor : PAPER_COLOR;
     this.touched = true;
+    this.emit();
+  }
+  /** Coloured paper (round 40): the whole card is redrawn in the new colour. */
+  setPaperColor(color) {
+    if (color === this.paperColor) return;
+    this.paperColor = color;
     this.emit();
   }
 }

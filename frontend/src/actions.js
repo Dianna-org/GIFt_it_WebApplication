@@ -20,6 +20,7 @@ export async function moderateArtwork() {
 export async function saveDesign() {
   const s = st();
   if (!s.user) { s.showToast('Create an account or log in to save to your portfolio.', 'error'); s.setPanel('auth'); return; }
+  if (s.trial) { s.showToast('This is a practice card for trying – go “Back to my card” to save it.', 'error'); return; }
   useStore.setState({ busy: true });
   try {
     const mod = await moderateArtwork();
@@ -27,26 +28,45 @@ export async function saveDesign() {
     const data = s.paper.serialize();
     const payload = {
       title: s.title.trim(), cardSize: s.cardSize, background: s.bg,
-      image: data.image, layers: data.layers, thumbnail: s.paper.thumbnail(s.bg), texts: data.texts, shapes: data.shapes, // picture: the closed card on its background
+      image: data.image, layers: data.layers, thumbnail: s.paper.thumbnail(s.bg), texts: data.texts, shapes: data.shapes, paperColor: data.paperColor, cardKey: data.cardKey, // picture: the closed card on its background
       palette: s.myColors.map((c) => c || ''),
     };
+    let r;
     if (s.designId) {
-      try { await api.updateDesign(s.designId, payload); }
+      try { r = await api.updateDesign(s.designId, payload); }
       catch (e) {
         if (!/not found|404/i.test(e.message)) throw e;
-        const r = await api.createDesign(payload); useStore.setState({ designId: r.id });
+        r = await api.createDesign(payload); useStore.setState({ designId: r.id });
       }
     } else {
-      const r = await api.createDesign(payload);
+      r = await api.createDesign(payload);
       useStore.setState({ designId: r.id });
     }
     useStore.setState({ dirtySinceSave: false });
-    s.showToast('Saved to your portfolio.', 'success');
+    s.showToast('Saved to your portfolio.', 'success'); // gift points come from downloading the card (round 42)
   } catch (e) {
     s.showToast(e.message, 'error');
   } finally {
     useStore.setState({ busy: false });
   }
+}
+
+/**
+ * Round 42: gift points come from saving the card to your computer (picture or GIF) – 50 the first time a
+ * decorated card is downloaded; the server makes sure each card pays only once. Returns the toast text.
+ */
+export async function rewardDownload(kind) {
+  const s = st();
+  if (!s.user) return 'Saved to your computer. Log in to earn gift points for your cards.';
+  if (s.trial) return 'Saved to your computer.';
+  if (!s.paper.isDecorated()) return 'Saved to your computer.';
+  try {
+    const r = await api.downloadPoints(s.paper.cardKey, kind);
+    if (r.user && st().token === s.token) st().setSession(r.user, s.token);
+    if (r.pointsEarned > 0) return `Saved to your computer! 🎁 +${r.pointsEarned} gift points – you have ${r.points} now. Spend them in the gift shop.`;
+    if (r.why === 'limit') return 'Saved to your computer. (You have earned all the gift points you can for today – more tomorrow!)';
+  } catch { /* points are a bonus: the file is saved anyway */ }
+  return 'Saved to your computer.';
 }
 
 export async function confirmDiscard(message = 'You have unsaved changes. Discard them?') {

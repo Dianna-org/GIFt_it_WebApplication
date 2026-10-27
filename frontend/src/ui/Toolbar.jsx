@@ -3,7 +3,9 @@ import { createPortal } from 'react-dom';
 import { useStore } from '../store.js';
 import { CARD_SIZES, DRAW_TOOLS, PASTELS, TAPE_PATTERNS, TOOL_LABELS } from '../config.js';
 import { ALL_FONTS, FONT_GROUPS, loadFont } from './fonts.js';
-import { STICKERS, stickerCanvas } from '../engine/stickers.js';
+import { stickersFor, stickerCanvas } from '../engine/stickers.js';
+import { TrialBar } from './Shop.jsx';
+import { ALL_PAPER, PAPERS, WHITE_PAPER, canUse, paperChoices, rollPattern, tapeChoices, usableIds } from '../shop/catalog.js';
 import { PATTERNS } from '../engine/patterns.js';
 import { renderStroke } from '../engine/brushes.js';
 import { cardIsOpen, putCardDown, turnCardPage } from '../scene/Card.jsx';
@@ -339,11 +341,14 @@ function ShapeOptions() {
 
 export function ToolOptions() {
   const tool = useStore((s) => s.tool);
+  const user = useStore((s) => s.user);
+  useStore((s) => s.trial); // a sticker pack being tried shows its stickers
   const settings = useStore((s) => s.toolSettings);
   const setToolSetting = useStore((s) => s.setToolSetting);
   const tapeWidth = useStore((s) => s.tapeWidth);
   const setTapeWidth = useStore((s) => s.setTapeWidth);
   const tapePattern = useStore((s) => s.tapePattern);
+  useStore((s) => s.rollDesign[s.tapePattern]); // the tape name follows the roll's design
   const stickerSize = useStore((s) => s.stickerSize);
   const stickerRot = useStore((s) => s.stickerRot);
   const setSticker = useStore((s) => s.setSticker);
@@ -423,8 +428,9 @@ export function ToolOptions() {
 
       {tool === 'tape' && (
         <>
-          <p className="muted">Press on the card and drag to pull the tape out, then release. The roll waits there until you cut the tape with the scissors. Tape: {TAPE_PATTERNS.find((p) => p.id === tapePattern)?.label}.</p>
+          <p className="muted">Press on the card and drag to pull the tape out, then release. The roll waits there until you cut the tape with the scissors. Tape: {rollPattern(useStore.getState(), tapePattern).label}.</p>
           <Slider label="Tape width" value={tapeWidth} min={30} max={160} onChange={setTapeWidth} />
+          <TapeDesigns />
         </>
       )}
       {tool === 'scissors' && (paper.pendingTape
@@ -433,7 +439,8 @@ export function ToolOptions() {
 
       {tool === 'sticker' && (
         <>
-          <div className="stickers" data-kbd="choice">{STICKERS.map((s) => <StickerButton key={s.id} id={s.id} />)}</div>
+          <div className="stickers" data-kbd="choice">{stickersFor(usableIds(user)).map((s) => <StickerButton key={s.id} id={s.id} />)}</div>
+          <button className="link shop-link" onClick={() => useStore.getState().setPanel('shop')}>🎁 More sticker packs in the gift shop</button>
           <div className="grid3">
             <Slider label="Size" value={stickerSize} min={80} max={520} onChange={(v) => setSticker({ stickerSize: v })} />
             <Slider label="Rotation" value={stickerRot} min={-180} max={180} suffix="°" onChange={(v) => setSticker({ stickerRot: v })} />
@@ -509,6 +516,82 @@ function KeysHelp() {
           </table>
         </div>
       )}
+    </div>
+  );
+}
+
+/** "🎁 120": the user's gift points – opens the gift shop (round 40). */
+function PointsButton() {
+  const user = useStore((s) => s.user);
+  return (
+    <button className="btn points-btn" onClick={() => useStore.getState().setPanel('shop')} title={user ? 'Your gift points – open the gift shop' : 'Gift shop – log in to collect gift points'}>
+      🎁 {user ? <><b>{user.points ?? 0}</b> points</> : 'Gift shop'}
+    </button>
+  );
+}
+
+/** "📄 Paper": the colour of the card's paper – white, the colours bought in the shop, or any colour with "All coloured paper". */
+function PaperPicker() {
+  const user = useStore((s) => s.user);
+  useStore((s) => s.trial); // trying a paper in the shop makes it usable
+  const paper = useStore((s) => s.paper);
+  const [, force] = useState(0);
+  useEffect(() => paper.onChange(() => force((n) => n + 1)), [paper]);
+  const { open, setOpen, ref } = usePopover();
+  const cur = paper.paperColor;
+  const choices = paperChoices(user);
+  const any = canUse(user, ALL_PAPER);
+  const locked = PAPERS.filter((p) => !canUse(user, p.id));
+  const pick = (c) => useStore.getState().setPaperColor(c);
+  // only there once you own a coloured paper (round 42) – or the card already is coloured (opened / trying one)
+  if (choices.length < 2 && !any && cur.toLowerCase() === WHITE_PAPER) return null;
+  return (
+    <div className="popwrap" ref={ref}>
+      <button className="btn" onClick={() => setOpen(!open)} title="Colour of the card's paper"><span className="dot" style={{ background: cur }} /> Paper</button>
+      {open && (
+        <div className="pop paper-pop">
+          <PopHead title="Paper colour" onClose={() => setOpen(false)} />
+          <div className="pop-grid">
+            {choices.map((p) => (
+              <button key={p.id} className={'swatch paper-swatch' + (p.color.toLowerCase() === cur.toLowerCase() ? ' on' : '')} style={{ background: p.color }} title={p.name} aria-label={p.name} onClick={() => pick(p.color)} />
+            ))}
+            {locked.map((p) => (
+              <button key={p.id} className="swatch paper-swatch locked" style={{ background: p.color }} title={`${p.name} – in the gift shop`} aria-label={`${p.name} (locked)`} onClick={() => useStore.getState().setPanel('shop')}>🔒</button>
+            ))}
+          </div>
+          {any ? (
+            <label className="pick-any">
+              <span className="swatch custom"><input type="color" value={cur} onChange={(e) => pick(e.target.value)} aria-label="Any paper colour" /><span style={{ background: cur }} /></span>
+              Any colour…
+            </label>
+          ) : (
+            <p className="muted">🔒 colours and “All coloured paper” (any colour) are in the <button className="link" onClick={() => useStore.getState().setPanel('shop')}>gift shop</button>.</p>
+          )}
+          {cur.toLowerCase() !== WHITE_PAPER && <p className="muted">The paper colour is saved with this card.</p>}
+        </div>
+      )}
+    </div>
+  );
+}
+
+/** Tape panel: the roll in your hand can wear its own design or one bought in the gift shop. */
+function TapeDesigns() {
+  const user = useStore((s) => s.user);
+  useStore((s) => s.trial);
+  const variant = useStore((s) => s.tapePattern);
+  const current = useStore((s) => s.rollDesign[variant]);
+  const extras = tapeChoices(user);
+  const set = (id) => useStore.getState().setRollDesign(variant, id);
+  return (
+    <div className="tape-designs">
+      <span className="slider-label">Tape design</span>
+      <div className="row" data-kbd="choice">
+        <button className={'chip wide-chip' + (!current || !extras.some((t) => t.id === current) ? ' on' : '')} onClick={() => set(null)}>This roll's own</button>
+        {extras.map((t) => (
+          <button key={t.id} className={'chip wide-chip' + (current === t.id ? ' on' : '')} onClick={() => set(t.id)} title={t.label}>{t.label}</button>
+        ))}
+      </div>
+      {!extras.length && <button className="link shop-link" onClick={() => useStore.getState().setPanel('shop')}>🎁 More tape designs in the gift shop</button>}
     </div>
   );
 }
@@ -639,6 +722,7 @@ export function TopBar() {
   return (
     <header className="topbar">
       <div className="center">
+        <TrialBar />
         <button className="btn" disabled={!paper.canUndo && !paper.choice} onClick={() => { if (paper.undo()) markDirty(); }} title={`Undo (Ctrl+Z) – ${paper.history.length} step${paper.history.length === 1 ? '' : 's'} available`}>↶ Undo</button>
         <button className="btn danger-soft" onClick={eraseAll} title="Erase everything on the card">🧽 Erase all</button>
         <OpenClose />
@@ -646,15 +730,20 @@ export function TopBar() {
         <button className="btn" onClick={() => useStore.getState().resetCard()} title="Put the card back flat, the way it started">🎯 Reset rotation</button>
         <button className="btn" onClick={() => useStore.getState().putBackAll()} title="Every tool goes back to its usual place">🧹 Put all tools back</button>
         <ZoomControls />
-        <CardSizePicker />
-        <BgPicker />
-        <KeysHelp />
       </div>
-      {/* top-right corner: the logo (the user's picture, unchanged) = the menu button */}
-      <div className={'corner' + (zoomed ? ' gone' : '')} aria-hidden={zoomed}>
+      {/* top-right corner: the logo (the user's picture, unchanged) = the menu button, and under it one
+          button below the other (round 42, the user's order): points, card size, paper colour, background, keys */}
+      <div className={'corner' + (zoomed ? ' gone' : '')} aria-hidden={zoomed} inert={zoomed ? '' : undefined}>
         <button className="menu-btn logo-btn" onClick={() => setMenu(!menuOpen)} aria-label="Open menu" aria-expanded={menuOpen} tabIndex={zoomed ? -1 : 0} title="Menu – account, save, portfolio, export…">
           <img src="/logo.jpeg" alt="GIFt it! – open the menu" />
         </button>
+        <div className="corner-btns">
+          <PointsButton />
+          <CardSizePicker />
+          <PaperPicker />
+          <BgPicker />
+          <KeysHelp />
+        </div>
       </div>
     </header>
   );

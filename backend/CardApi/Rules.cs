@@ -55,3 +55,43 @@ public static class ProfanityFilter
         return false;
     }
 }
+
+/// <summary>
+/// Gift points and the shop (round 40). Prices and item ids live here, on the server, so they can't be
+/// changed in the browser. The frontend has the pictures / contents of each item (frontend/src/shop/catalog.js).
+/// </summary>
+public static class GiftShop
+{
+    public const int PointsPerCard = 50;   // first download (picture or GIF) of a decorated card (round 42)
+    public const int MaxRewardsPerDay = 10; // at most this many cards earn points per 24 h (the browser can't be trusted)
+    public const int WelcomePoints = 100;  // every account starts with these
+
+    public record Item(string Id, string Kind, int Price);
+
+    public static readonly IReadOnlyList<Item> Items = new List<Item>
+    {
+        new("paper-pink", "paper", 60), new("paper-purple", "paper", 60), new("paper-red", "paper", 60),
+        new("paper-blue", "paper", 60), new("paper-sky", "paper", 60), new("paper-mint", "paper", 60),
+        new("paper-yellow", "paper", 60), new("paper-orange", "paper", 60), new("paper-kraft", "paper", 60),
+        new("paper-black", "paper", 60),
+        new("paper-all", "paper", 400),
+        new("stickers-party", "stickers", 120), new("stickers-animals", "stickers", 120), new("stickers-sweets", "stickers", 120),
+        new("tapes-pastel", "tapes", 100), new("tapes-bright", "tapes", 100),
+        new("tools-golden", "tools", 150), new("tools-pastel", "tools", 150), new("tools-wooden", "tools", 150),
+        new("tool-calligraphy", "tool", 200), new("tool-spray", "tool", 200), // brand-new drawing tools (round 41)
+    };
+
+    public static Item? Find(string? id) => Items.FirstOrDefault(i => i.Id == id);
+
+    /// <summary>A card's key made in the browser (random letters/digits/dashes); "d-&lt;design id&gt;" for cards
+    /// saved before round 42.</summary>
+    public static bool IsCardKey(string? k) =>
+        k is not null && System.Text.RegularExpressions.Regex.IsMatch(k, "^[a-z0-9-]{8,64}$");
+
+    /// <summary>How many more cards may earn points now (rewards in the last 24 hours count).</summary>
+    public static int RewardsLeft(IEnumerable<DateTime>? times, DateTime now) =>
+        Math.Max(0, MaxRewardsPerDay - (times?.Count(t => t > now.AddHours(-24)) ?? 0));
+
+    public static bool IsPaperColor(string? c) =>
+        c is not null && System.Text.RegularExpressions.Regex.IsMatch(c, "^#[0-9a-fA-F]{6}$");
+}

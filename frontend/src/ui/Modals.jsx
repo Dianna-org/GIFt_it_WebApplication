@@ -7,7 +7,7 @@ import { useStore } from '../store.js';
 import { ANIMATION_LAYOUTS, PICTURE_LAYOUTS } from '../export/layouts.js';
 import { savePicture, saveGif, GIF_SIZE } from '../export/exporter.js';
 import { renderLayout, ANIM_SECONDS } from '../export/layouts.js';
-import { moderateArtwork, confirmDiscard } from '../actions.js';
+import { moderateArtwork, confirmDiscard, rewardDownload } from '../actions.js';
 
 function Modal({ title, onClose, children, wide }) {
   useEffect(() => {
@@ -219,7 +219,7 @@ export function ExportModal() {
       if (!mod.ok) { showToast(mod.reason, 'error'); return; }
       if (mode === 'picture') await savePicture(sel, paper, bg, name, side);
       else await saveGif(sel, paper, bg, name, setProgress, side);
-      showToast('Saved to your computer.', 'success');
+      showToast(await rewardDownload(mode === 'picture' ? 'picture' : 'gif'), 'success');
     } catch (e) { showToast('Could not create the file: ' + e.message, 'error'); } finally { setProgress(null); }
   };
 

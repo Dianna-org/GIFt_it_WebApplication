@@ -11,6 +11,8 @@ export const BLEND = {
   brush: { op: 'source-over', alpha: 1 },
   glitter: { op: 'source-over', alpha: 1 },
   pattern: { op: 'source-over', alpha: 1 },
+  calligraphy: { op: 'source-over', alpha: 1 },
+  spray: { op: 'source-over', alpha: 1 },      // the mist is see-through already: passes build up
 };
 
 function hexToRgb(hex) {
@@ -92,6 +94,8 @@ function polyline(ctx, u, from, to) {
 
 const BRUSH_STEP = 2.5, GLITTER_STEP = 1.5, CRAYON_STEP = 1.1;
 const highlighterStep = (size) => Math.max(1, (size * 0.38) / 3);
+const CALLI_STEP = 1.2, CALLI_ANGLE = -Math.PI / 4; // the flat nib is held at 45° (thick ↘ / thin ↗ strokes)
+const sprayStep = (size) => Math.max(1.5, size * 0.12);
 const patternStep = (opts) => Math.max(2, opts.size * patternById(opts.pattern).gap * ((opts.spacing ?? 100) / 100));
 
 export const UNITS = {
@@ -101,11 +105,14 @@ export const UNITS = {
   crayon: (pts) => resample(pts, CRAYON_STEP),
   brush: (pts) => resample(pts, BRUSH_STEP),
   glitter: (pts) => resample(pts, GLITTER_STEP),
+  calligraphy: (pts) => resample(pts, CALLI_STEP),
+  spray: (pts, { size }) => resample(pts, sprayStep(size)),
 };
 
 /** How many units at the end of a live stroke may still change (they are re-drawn every frame). */
 export function keepUnits(tool, opts) {
-  const step = { pattern: patternStep(opts), marker: 4, highlighter: highlighterStep(opts.size), crayon: CRAYON_STEP, brush: BRUSH_STEP, glitter: GLITTER_STEP }[tool];
+  const step = { pattern: patternStep(opts), marker: 4, highlighter: highlighterStep(opts.size), crayon: CRAYON_STEP, brush: BRUSH_STEP, glitter: GLITTER_STEP,
+    calligraphy: CALLI_STEP, spray: sprayStep(opts.size) }[tool];
   const endZone = tool === 'brush' ? opts.size * 1.9 : 0; // the brush tapers off at the end
   return Math.ceil((endZone + 16) / step) + 3;
 }
@@ -227,7 +234,74 @@ const DRAW = {
     ctx.globalAlpha = 1;
     return { sparkles };
   },
+
+  // calligraphy pen: a flat nib swept along the stroke – broad when moving across the nib, a hairline along it
+  calligraphy(ctx, u, { size, color }, from, to) {
+    const nx = (Math.cos(CALLI_ANGLE) * size) / 2, ny = (Math.sin(CALLI_ANGLE) * size) / 2;
+    ctx.fillStyle = color; ctx.strokeStyle = color;
+    ctx.lineCap = 'round'; ctx.lineJoin = 'round';
+    const a0 = Math.max(0, from - 1);
+    ctx.beginPath();
+    if (to - a0 === 1) { // a single dab: the nib's own shape
+      const p = u[a0];
+      ctx.moveTo(p.x - nx, p.y - ny); ctx.lineTo(p.x + nx, p.y + ny);
+    } else {
+      // one quad per step, all wound the same way, filled as ONE path (no seams between them)
+      for (let i = a0 + 1; i < to; i++) {
+        const a = u[i - 1], b = u[i];
+        const cross = (b.x - a.x) * ny - (b.y - a.y) * nx;
+        const s = cross >= 0 ? 1 : -1;
+        ctx.moveTo(a.x - nx * s, a.y - ny * s); ctx.lineTo(a.x + nx * s, a.y + ny * s);
+        ctx.lineTo(b.x + nx * s, b.y + ny * s); ctx.lineTo(b.x - nx * s, b.y - ny * s); ctx.closePath();
+      }
+      ctx.fill('nonzero');
+      // the nib has some thickness too, so strokes along it stay a fine hairline instead of vanishing
+      polyline(ctx, u, from, to);
+    }
+    ctx.lineWidth = Math.max(1.2, size * 0.1);
+    ctx.stroke();
+  },
+
+  // spray can: a soft mist with fine speckles, denser in the middle; passing over a spot again builds it up
+  spray(ctx, u, { size, color, seed }, from, to) {
+    const r = size / 2, puff = mist(color);
+    const dots = Math.round(size * 1.1);
+    ctx.fillStyle = color;
+    for (let k = from; k < to; k++) {
+      const p = u[k], rng = unitRng(seed, k);
+      ctx.globalAlpha = 0.045;
+      ctx.drawImage(puff, p.x - r, p.y - r, size, size);
+      for (let i = 0; i < dots; i++) {
+        const a = rng() * Math.PI * 2, d = r * Math.min(1, Math.abs(rng() + rng() + rng() - 1.5) / 1.1);
+        const s = 0.7 + rng() * 1.2;
+        ctx.globalAlpha = 0.2 + rng() * 0.45;
+        ctx.fillRect(p.x + Math.cos(a) * d, p.y + Math.sin(a) * d, s, s);
+      }
+      if (rng() < 0.06) { // now and then a bigger droplet spits out
+        const a = rng() * Math.PI * 2, d = r * (0.3 + rng() * 0.8);
+        ctx.globalAlpha = 0.55 + rng() * 0.35;
+        ctx.beginPath(); ctx.arc(p.x + Math.cos(a) * d, p.y + Math.sin(a) * d, 0.9 + rng() * 1.6, 0, Math.PI * 2); ctx.fill();
+      }
+    }
+    ctx.globalAlpha = 1;
+  },
 };
+
+// a soft round puff of the spray colour (one pre-drawn picture per colour: gradients per dot are too slow)
+const mistCache = new Map();
+function mist(color) {
+  let c = mistCache.get(color);
+  if (c) return c;
+  const n = 64, m = n / 2;
+  c = document.createElement('canvas');
+  c.width = c.height = n;
+  const g = c.getContext('2d'), grad = g.createRadialGradient(m, m, 0, m, m, m);
+  grad.addColorStop(0, rgba(color, 1)); grad.addColorStop(0.45, rgba(color, 0.55)); grad.addColorStop(1, rgba(color, 0));
+  g.fillStyle = grad; g.fillRect(0, 0, n, n);
+  if (mistCache.size > 40) mistCache.clear();
+  mistCache.set(color, c);
+  return c;
+}
 
 /** Draw units [from, to) of a stroke (see above). Returns optional sparkles for glitter. */
 export function drawStrokeRange(ctx, tool, units, opts, from, to, final) {

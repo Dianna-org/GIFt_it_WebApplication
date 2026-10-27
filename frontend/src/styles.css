@@ -20,13 +20,20 @@ button { font: inherit; color: inherit; cursor: pointer; }
 
 .topbar { position: fixed; top: 0; left: 0; right: 0; display: flex; align-items: center; gap: 12px; padding: 10px 14px; pointer-events: none; z-index: 5; }
 .topbar > * { pointer-events: auto; }
-.center { flex: 1; display: flex; justify-content: center; gap: 10px; flex-wrap: wrap; pointer-events: none; }
+.center { flex: 1; align-self: flex-start; margin-top: 12px; display: flex; justify-content: center; gap: 10px; flex-wrap: wrap; pointer-events: none; }
 .center > * { pointer-events: auto; }
 /* the menu button IS the logo: the user's picture exactly as it is, only shown smaller (round 27) */
 .menu-btn.logo-btn { flex: none; padding: 0; border: 0; background: none; line-height: 0; cursor: pointer; border-radius: 4px; box-shadow: 0 4px 14px rgba(60, 20, 30, 0.28); transition: transform 0.15s ease, box-shadow 0.15s ease, opacity 0.3s ease, visibility 0.3s; }
 .menu-btn.logo-btn img { width: 140px; height: 140px; display: block; }
 /* zoomed in: the logo fades away (keeps its place, so the top bar doesn't jump) and the zoom map takes its corner */
-.corner { margin: 22px 40px 0 auto; align-self: flex-start; flex: none; display: flex; align-items: center; gap: 12px; transition: opacity 0.3s ease, visibility 0.3s; } /* a little in from the corner (round 30) */
+.corner { margin: 22px 40px 0 auto; align-self: flex-start; flex: none; display: flex; flex-direction: column; align-items: stretch; gap: 12px; width: 140px; transition: opacity 0.3s ease, visibility 0.3s; } /* a little in from the corner (round 30) */
+/* round 42: points, card size, paper, background, keys – one under the other, as wide as the logo */
+/* they hang below the logo without making the top bar taller, so the commands in the middle stay up where they were */
+.corner { position: relative; }
+.corner-btns { position: absolute; top: calc(100% + 12px); left: 0; right: 0; display: flex; flex-direction: column; gap: 8px; }
+.corner-btns > .btn, .corner-btns > .popwrap > .btn { width: 100%; justify-content: center; }
+/* their pop-ups open to the LEFT of the column (there is no room on the right) */
+.corner-btns .pop { top: 0; left: auto; right: calc(100% + 10px); transform: none; }
 .corner.gone { opacity: 0; visibility: hidden; pointer-events: none; }
 .menu-btn.logo-btn:hover { transform: translateY(-2px) scale(1.03); box-shadow: 0 8px 20px rgba(60, 20, 30, 0.35); }
 .menu-btn.logo-btn:active { transform: scale(0.98); }
@@ -249,7 +256,8 @@ body.zoom-panning, body.zoom-panning .desk canvas { cursor: grabbing !important;
 .size-opt small { display: block; color: var(--muted); }
 .size-shape { flex: none; width: 44px; border: 2px solid #b9a98a; border-radius: 3px; background: #fffaf0; background-image: linear-gradient(90deg, transparent calc(50% - 1px), #d8ccb4 calc(50% - 1px), #d8ccb4 calc(50% + 1px), transparent calc(50% + 1px)); }
 @media (max-width: 720px) {
-  .corner { margin: 10px 16px 0 auto; }
+  .corner { margin: 10px 16px 0 auto; width: 104px; }
+  .corner-btns .btn { padding: 6px 8px; font-size: 13px; }
 }
 
 /* ---------- tear-off calendar birth date picker (round 32, looks like the user's ChooseDate.jpeg) ---------- */
@@ -340,3 +348,54 @@ body.zoom-panning, body.zoom-panning .desk canvas { cursor: grabbing !important;
 .font-opt:hover { background: #f1efe8; }
 .font-opt.on { background: #e7f5f2; color: var(--accent); }
 .grid3.two { grid-template-columns: 1fr 1fr; }
+
+/* ---------- gift shop (round 40) ---------- */
+.points-btn b { color: #c0392b; }
+.shop-link { display: block; margin-top: 2px; font-size: 13px; }
+.paper-pop { width: min(300px, 92vw); }
+.paper-swatch { box-shadow: inset 0 0 0 1px rgba(0,0,0,.15); }
+.paper-swatch.locked { display: grid; place-items: center; font-size: 12px; opacity: .55; }
+.tape-designs { margin-top: 6px; }
+.tape-designs .row { flex-wrap: wrap; }
+.shop-page .points-big { color: #c0392b; font-size: 20px; }
+.shop-login { background: #fff; border: 2px solid var(--accent); border-radius: 16px; padding: 14px 18px; margin-bottom: 18px; }
+.shop-section { margin-bottom: 30px; }
+.shop-section h2 { margin: 0 0 2px; font-size: 22px; }
+.shop-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(230px, 1fr)); gap: 16px; margin-top: 10px; }
+.shop-item { display: grid; grid-template-rows: auto 1fr auto; background: #fff; border: 1px solid var(--line); border-radius: 18px; overflow: hidden; box-shadow: 0 6px 18px rgba(60, 40, 0, .08); }
+.shop-item.owned { border-color: var(--accent); }
+.shop-item.big { grid-column: span 2; }
+.shop-info { display: grid; gap: 3px; padding: 10px 14px 4px; }
+.shop-info b { font-size: 16px; }
+.shop-info small { color: var(--muted); }
+.shop-buy { display: flex; align-items: center; justify-content: space-between; gap: 8px; padding: 8px 14px 14px; }
+.shop-buy .price { font-weight: 900; font-size: 17px; color: #c0392b; }
+.owned-tag { font-weight: 800; color: var(--accent); }
+.pv { height: 120px; background: #f4efe0; display: grid; place-items: center; }
+.pv-card { position: relative; width: 120px; height: 84px; border-radius: 3px; box-shadow: 0 6px 14px rgba(0,0,0,.2), inset 0 0 0 1px rgba(0,0,0,.08); }
+.pv-card.rainbow { background: conic-gradient(#f9c6d6, #c9b3f0, #3f7fd8, #bfe8d2, #fbe27a, #f9a35c, #e5484d, #f9c6d6); }
+.pv-fold { position: absolute; top: 0; bottom: 0; left: 50%; width: 1px; background: rgba(0,0,0,.15); }
+.pv-stickers { grid-template-columns: repeat(6, 1fr); gap: 2px; padding: 10px; }
+.pv-stickers img { width: 100%; }
+.pv-tapes { grid-template-columns: repeat(4, 1fr); gap: 8px; padding: 18px 14px; place-items: center stretch; }
+.pv-tape { display: block; height: 70px; border-radius: 6px; box-shadow: 0 3px 8px rgba(0,0,0,.15); }
+.pv-skin { grid-template-columns: repeat(6, 1fr); gap: 6px; padding: 26px 14px; place-items: center stretch; }
+.pv-skin span { display: block; height: 64px; border-radius: 18px 18px 6px 6px; box-shadow: inset 0 -8px 0 rgba(0,0,0,.12); }
+.pv-skin span.shiny { background-image: linear-gradient(100deg, transparent 30%, rgba(255,255,255,.65) 45%, transparent 60%) !important; }
+@media (max-width: 720px) { .shop-item.big { grid-column: auto; } }
+.pv-tool { padding: 8px 14px; }
+.pv-tool img { width: 100%; height: 118px; object-fit: contain; }
+/* round 42: "Try it" – the bar on top while a shop item is tried on a practice card */
+.try-btn { margin-right: auto; }
+.trial-bar { flex-basis: 100%; display: flex; flex-wrap: wrap; align-items: center; justify-content: center; gap: 8px 14px; background: #fff7e0; border: 2px solid #e0a526; border-radius: 16px; padding: 8px 14px; box-shadow: 0 4px 14px rgba(80, 50, 0, 0.15); }
+.trial-text { font-size: 14px; }
+.trial-actions { display: inline-flex; gap: 8px; flex-wrap: wrap; }
+/* round 42: realistic shop pictures (3D renders / sticker sheet) */
+.pv-photo { padding: 0; position: relative; overflow: hidden; }
+.pv-photo img { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: cover; display: block; }
+.pv-loading .pv { animation: pv-wait 1.2s ease-in-out infinite alternate; }
+@keyframes pv-wait { from { opacity: 1; } to { opacity: 0.6; } }
+.pv.pv-photo { height: 150px; }
+.shop-item.big .pv-photo img { object-fit: contain; }
+.shop-buy .btn, .shop-buy .price { white-space: nowrap; }
+.shop-buy { flex-wrap: wrap; }

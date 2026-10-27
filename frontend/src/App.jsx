@@ -5,6 +5,7 @@ import { TopBar, ToolOptions, HoverLabel, Toast } from './ui/Toolbar.jsx';
 import { Menu } from './ui/Menu.jsx';
 import { AuthModal, ConfirmDialog, ExportModal, PortfolioModal } from './ui/Modals.jsx';
 import { ZoomOverlay } from './ui/Zoom.jsx';
+import { ShopPage } from './ui/Shop.jsx';
 import { useStore } from './store.js';
 import { putCardDown, turnCardPage } from './scene/Card.jsx';
 import { heldToolId, putBackTool } from './scene/Desk.jsx';
@@ -14,6 +15,8 @@ export function App() {
   const tool = useStore((s) => s.tool);
   // "Pick from card" (palette button) is not a tool in the hand: the pointer simply becomes a crosshair
   useEffect(() => { document.body.classList.toggle('picking', tool === 'picker'); }, [tool]);
+  // latest gift points + bought items for a saved session (round 40)
+  useEffect(() => { useStore.getState().refreshAccount(); }, []);
 
   useEffect(() => {
     const key = (e) => {
@@ -70,6 +73,7 @@ export function App() {
       {panel === 'auth' && <AuthModal />}
       {panel === 'portfolio' && <PortfolioModal />}
       {panel === 'export' && <ExportModal />}
+      {panel === 'shop' && <ShopPage />}
       <ConfirmDialog />
       <ZoomOverlay />
     </>

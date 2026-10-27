@@ -41,6 +41,9 @@ export const DRAW_TOOLS = {
   brush: { label: 'Paint brush', size: 34, minSize: 4, maxSize: 120, opacity: 95, straight: 12, hasOptions: true },
   glitter: { label: 'Glitter pen', size: 16, minSize: 4, maxSize: 50, opacity: 85, straight: 50, hasOptions: true },
   pattern: { label: 'Pattern pen', size: 40, minSize: 10, maxSize: 100, opacity: 100, straight: 50, hasOptions: true },
+  // gift shop tools (round 41): only on the desk for accounts that bought them (shopItem)
+  calligraphy: { label: 'Calligraphy pen', size: 20, minSize: 4, maxSize: 60, opacity: 100, straight: 50, hasOptions: true, shopItem: 'tool-calligraphy' },
+  spray: { label: 'Spray can', size: 50, minSize: 12, maxSize: 140, opacity: 100, straight: 50, hasOptions: true, shopItem: 'tool-spray' },
 };
 
 export const TOOL_LABELS = {

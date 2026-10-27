@@ -5,6 +5,7 @@ import { useStore } from '../store.js';
 import { cardDims, DRAW_TOOLS } from '../config.js';
 import { cutTapeStrip, pointInPolygon } from '../engine/geometry.js';
 import { tapePatternById, tapePolygon } from '../engine/paper.js';
+import { rollPattern } from '../shop/catalog.js';
 import { containsProfanity } from '../moderation.js';
 import { movePointer, pointer } from './pointer.js';
 import { paperBumpTexture } from './textures.js';
@@ -274,7 +275,7 @@ function handleDown(face, pt) {
     if (c) { s.setColor(c); s.showToast(`Colour ${c} picked – it is now on your tools.`, 'success'); }
     useStore.setState({ tool: s.prevTool && s.prevTool !== 'picker' ? s.prevTool : null, prevTool: null });
   } else if (tool === 'tape') {
-    paper.setPendingTape({ face, S: pt, E: pt, width: s.tapeWidth, pattern: tapePatternById(s.tapePattern) });
+    paper.setPendingTape({ face, S: pt, E: pt, width: s.tapeWidth, pattern: rollPattern(s, s.tapePattern) });
     pointer.drawing = true; pointer.pulling = true; pointer.travel = 0;
   } else if (tool === 'scissors') {
     if (paper.pendingTape.face !== face) return;

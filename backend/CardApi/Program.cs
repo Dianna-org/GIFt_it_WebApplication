@@ -6,6 +6,7 @@ using Microsoft.AspNetCore.Authentication.JwtBearer;
 using Microsoft.AspNetCore.Identity;
 using Microsoft.AspNetCore.RateLimiting;
 using Microsoft.IdentityModel.Tokens;
+using MongoDB.Bson;
 using MongoDB.Driver;
 
 var builder = WebApplication.CreateBuilder(args);
@@ -83,7 +84,17 @@ string CreateToken(User u)
     return new System.IdentityModel.Tokens.Jwt.JwtSecurityTokenHandler().WriteToken(token);
 }
 
-object UserDto(User u) => new { id = u.Id, email = u.Email, displayName = u.DisplayName, avatar = u.Avatar ?? "" };
+object UserDto(User u) => new { id = u.Id, email = u.Email, displayName = u.DisplayName, avatar = u.Avatar ?? "", points = u.Points, owned = u.Owned ?? new() };
+
+// Accounts made before the gift shop existed get their welcome points once (round 40).
+async Task<User> StartShop(User u, IMongoCollection<User> users)
+{
+    if (u.ShopStarted) return u;
+    return await users.FindOneAndUpdateAsync(x => x.Id == u.Id && !x.ShopStarted,
+        Builders<User>.Update.Set(x => x.ShopStarted, true).Inc(x => x.Points, GiftShop.WelcomePoints),
+        new FindOneAndUpdateOptions<User> { ReturnDocument = ReturnDocument.After }) ?? u;
+}
+
 
 const int MaxAvatarChars = 300_000; // a 256 px JPEG is ~20-60 KB; this leaves plenty of room
 
@@ -110,7 +121,7 @@ auth.MapPost("/register", async (RegisterRequest r, IMongoCollection<User> users
     if (await users.Find(u => u.Email == email).AnyAsync())
         return Results.Conflict(new { error = "An account with this email already exists." });
 
-    var user = new User { Email = email, DisplayName = name, BirthDate = r.BirthDate.Date };
+    var user = new User { Email = email, DisplayName = name, BirthDate = r.BirthDate.Date, Points = GiftShop.WelcomePoints, ShopStarted = true };
     user.PasswordHash = hasher.HashPassword(user, r.Password!);
     try { await users.InsertOneAsync(user); }
     catch (MongoWriteException) { return Results.Conflict(new { error = "An account with this email already exists." }); }
@@ -123,8 +134,73 @@ auth.MapPost("/login", async (LoginRequest r, IMongoCollection<User> users, IPas
     var user = await users.Find(u => u.Email == email).FirstOrDefaultAsync();
     if (user is null || hasher.VerifyHashedPassword(user, user.PasswordHash, r.Password ?? "") == PasswordVerificationResult.Failed)
         return Results.Json(new { error = "Incorrect email or password." }, statusCode: 401);
+    user = await StartShop(user, users);
     return Results.Ok(new { token = CreateToken(user), user = UserDto(user) });
 });
+
+// The logged-in user's details (points and bought items too) – the app asks for them when it starts.
+app.MapGet("/api/account", async (ClaimsPrincipal p, IMongoCollection<User> users) =>
+{
+    var user = await users.Find(u => u.Id == p.FindFirstValue(ClaimTypes.NameIdentifier)).FirstOrDefaultAsync();
+    if (user is null) return Results.NotFound();
+    return Results.Ok(new { user = UserDto(await StartShop(user, users)) });
+}).RequireAuthorization();
+
+// ---------------------------------------------------------------- gift shop (round 40)
+app.MapGet("/api/shop", () => Results.Ok(new
+{
+    pointsPerCard = GiftShop.PointsPerCard, welcomePoints = GiftShop.WelcomePoints,
+    items = GiftShop.Items.Select(i => new { id = i.Id, kind = i.Kind, price = i.Price }),
+}));
+
+app.MapPost("/api/shop/buy", async (BuyRequest r, ClaimsPrincipal p, IMongoCollection<User> users) =>
+{
+    var item = GiftShop.Find(r.ItemId);
+    if (item is null) return Results.BadRequest(new { error = "That item isn't in the shop." });
+    var uid = p.FindFirstValue(ClaimTypes.NameIdentifier)!;
+    // one atomic step: only if it isn't owned yet and there are enough points
+    var user = await users.FindOneAndUpdateAsync(
+        u => u.Id == uid && u.Points >= item.Price && !u.Owned.Contains(item.Id),
+        Builders<User>.Update.Inc(u => u.Points, -item.Price).Push(u => u.Owned, item.Id),
+        new FindOneAndUpdateOptions<User> { ReturnDocument = ReturnDocument.After });
+    if (user is not null) return Results.Ok(new { user = UserDto(user) });
+    var now = await users.Find(u => u.Id == uid).FirstOrDefaultAsync();
+    if (now is null) return Results.NotFound();
+    if (now.Owned.Contains(item.Id)) return Results.Conflict(new { error = "You already have this one." });
+    return Results.BadRequest(new { error = $"Not enough gift points yet: you need {item.Price - now.Points} more." });
+}).RequireAuthorization();
+
+// Round 42: gift points come from DOWNLOADING a decorated card (picture or GIF), once per card. The browser
+// only asks when the card has something on it; the server makes sure each card key pays once, cards that got
+// their points by saving (rounds 40-41) get none again, and at most MaxRewardsPerDay cards pay per 24 hours.
+app.MapPost("/api/points/download", async (DownloadRequest r, ClaimsPrincipal p, IMongoCollection<User> users, IMongoCollection<Design> designs) =>
+{
+    if (!GiftShop.IsCardKey(r.CardKey) || r.Kind is not ("picture" or "gif")) return Results.BadRequest(new { error = "Unknown card." });
+    var uid = p.FindFirstValue(ClaimTypes.NameIdentifier)!;
+    var user = await users.Find(u => u.Id == uid).FirstOrDefaultAsync();
+    if (user is null) return Results.NotFound();
+    object Answer(User u, int earned, string? why = null) => new { pointsEarned = earned, points = u.Points, why, user = UserDto(u) };
+    var key = r.CardKey!;
+    if (user.RewardedCards.Contains(key)) return Results.Ok(Answer(user, 0, "already"));
+    // a saved card from before round 42: its key is "d-<design id>", and it may already have had its points
+    Design? old = null;
+    if (key.StartsWith("d-"))
+    {
+        var designId = key[2..];
+        old = ObjectId.TryParse(designId, out _) ? await designs.Find(d => d.Id == designId && d.UserId == uid).FirstOrDefaultAsync() : null;
+        if (old is null) return Results.BadRequest(new { error = "Unknown card." });
+        if (old.PointsGiven) return Results.Ok(Answer(user, 0, "already"));
+    }
+    var now = DateTime.UtcNow;
+    if (GiftShop.RewardsLeft(user.RewardTimes, now) == 0) return Results.Ok(Answer(user, 0, "limit"));
+    // one atomic step: only if this card hasn't paid yet
+    var after = await users.FindOneAndUpdateAsync(u => u.Id == uid && !u.RewardedCards.Contains(key),
+        Builders<User>.Update.Push(u => u.RewardedCards, key).Push(u => u.RewardTimes, now).Inc(u => u.Points, GiftShop.PointsPerCard),
+        new FindOneAndUpdateOptions<User> { ReturnDocument = ReturnDocument.After });
+    if (after is null) return Results.Ok(Answer(user, 0, "already"));
+    if (old is not null) await designs.UpdateOneAsync(d => d.Id == old.Id, Builders<Design>.Update.Set(d => d.PointsGiven, true));
+    return Results.Ok(Answer(after, GiftShop.PointsPerCard));
+}).RequireAuthorization();
 
 // Profile photo: set (small JPEG/PNG data URL made in the browser) or remove ("" = show the initial again).
 app.MapPut("/api/account/avatar", async (AvatarRequest r, ClaimsPrincipal p, IMongoCollection<User> users) =>
@@ -177,6 +253,10 @@ IResult? Validate(DesignRequest r)
         return Results.BadRequest(new { error = "Invalid mask data." });
     if (r.Shapes != null && (r.Shapes.Count > 500 || r.Shapes.Any(sh => !ValidShape(sh))))
         return Results.BadRequest(new { error = "Invalid shape data." });
+    if (r.PaperColor is not null && !GiftShop.IsPaperColor(r.PaperColor))
+        return Results.BadRequest(new { error = "Invalid paper colour." });
+    if (!string.IsNullOrEmpty(r.CardKey) && !GiftShop.IsCardKey(r.CardKey))
+        return Results.BadRequest(new { error = "Unknown card." });
     var title = r.Title?.Trim() ?? "";
     if (title.Length > 40) return Results.BadRequest(new { error = "Title is too long (40 characters max)." });
     if (ProfanityFilter.Contains(title))
@@ -203,7 +283,7 @@ designsApi.MapGet("/{id}", async (string id, ClaimsPrincipal p, IMongoCollection
     return d is null ? Results.NotFound() : Results.Ok(d);
 });
 
-designsApi.MapPost("/", async (DesignRequest r, ClaimsPrincipal p, IMongoCollection<Design> designs) =>
+designsApi.MapPost("/", async (DesignRequest r, ClaimsPrincipal p, IMongoCollection<Design> designs, IMongoCollection<User> users) =>
 {
     if (Validate(r) is { } bad) return bad;
     var uid = Uid(p);
@@ -212,14 +292,14 @@ designsApi.MapPost("/", async (DesignRequest r, ClaimsPrincipal p, IMongoCollect
     var d = new Design
     {
         UserId = uid, Title = r.Title?.Trim() ?? "", CardSize = r.CardSize, Background = r.Background,
-        Image = r.Image, Mask = r.Mask ?? "", Thumbnail = r.Thumbnail, Texts = r.Texts ?? new(), Layers = r.Layers ?? new(), Palette = r.Palette ?? new(), Shapes = r.Shapes ?? new(), UpdatedAt = DateTime.UtcNow
+        Image = r.Image, Mask = r.Mask ?? "", Thumbnail = r.Thumbnail, Texts = r.Texts ?? new(), Layers = r.Layers ?? new(), Palette = r.Palette ?? new(), Shapes = r.Shapes ?? new(), PaperColor = r.PaperColor ?? "#fffdf8", CardKey = r.CardKey ?? "", UpdatedAt = DateTime.UtcNow
     };
     await designs.InsertOneAsync(d);
     return Results.Ok(new { id = d.Id, updatedAt = d.UpdatedAt });
 });
 
 // Saving an existing design always reuses its slot.
-designsApi.MapPut("/{id}", async (string id, DesignRequest r, ClaimsPrincipal p, IMongoCollection<Design> designs) =>
+designsApi.MapPut("/{id}", async (string id, DesignRequest r, ClaimsPrincipal p, IMongoCollection<Design> designs, IMongoCollection<User> users) =>
 {
     if (Validate(r) is { } bad) return bad;
     var uid = Uid(p);
@@ -228,8 +308,9 @@ designsApi.MapPut("/{id}", async (string id, DesignRequest r, ClaimsPrincipal p,
         Builders<Design>.Update
             .Set(d => d.Title, r.Title?.Trim() ?? "").Set(d => d.CardSize, r.CardSize).Set(d => d.Background, r.Background)
             .Set(d => d.Image, r.Image).Set(d => d.Mask, r.Mask ?? "").Set(d => d.Thumbnail, r.Thumbnail)
-            .Set(d => d.Texts, r.Texts ?? new()).Set(d => d.Layers, r.Layers ?? new()).Set(d => d.Palette, r.Palette ?? new()).Set(d => d.Shapes, r.Shapes ?? new()).Set(d => d.UpdatedAt, now));
-    return res.MatchedCount == 0 ? Results.NotFound() : Results.Ok(new { id, updatedAt = now });
+            .Set(d => d.Texts, r.Texts ?? new()).Set(d => d.Layers, r.Layers ?? new()).Set(d => d.Palette, r.Palette ?? new()).Set(d => d.Shapes, r.Shapes ?? new()).Set(d => d.PaperColor, r.PaperColor ?? "#fffdf8").Set(d => d.CardKey, r.CardKey ?? "").Set(d => d.UpdatedAt, now));
+    if (res.MatchedCount == 0) return Results.NotFound();
+    return Results.Ok(new { id, updatedAt = now });
 });
 
 designsApi.MapDelete("/{id}", async (string id, ClaimsPrincipal p, IMongoCollection<Design> designs) =>

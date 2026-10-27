@@ -33,4 +33,10 @@ export const api = {
   updateDesign: (id, b) => request(`/designs/${id}`, { method: 'PUT', body: b }),
   deleteDesign: (id) => request(`/designs/${id}`, { method: 'DELETE' }),
   setAvatar: (avatar) => request('/account/avatar', { method: 'PUT', body: { avatar } }),
+  // gift shop (round 40)
+  account: () => request('/account'),
+  shop: () => request('/shop', { auth: false }),
+  buy: (itemId) => request('/shop/buy', { method: 'POST', body: { itemId } }),
+  // round 42: a decorated card was downloaded (kind 'picture' | 'gif') – earns gift points once per card
+  downloadPoints: (cardKey, kind) => request('/points/download', { method: 'POST', body: { cardKey, kind } }),
 };

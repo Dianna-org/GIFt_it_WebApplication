@@ -2,6 +2,8 @@ import { create } from 'zustand';
 import { DEFAULT_BG, DRAW_TOOLS, TAPE_PATTERNS } from './config.js';
 import { ALL_FONTS, loadFont } from './ui/fonts.js';
 import { TEXT_DEFAULTS } from './engine/shapeLibrary.js';
+import { api } from './api.js';
+import { ALL_PAPER, PAPERS, owns, setTrialItem, tapeChoices } from './shop/catalog.js';
 import { CardPaper } from './engine/paper.js';
 
 const read = (key, fallback) => {
@@ -47,6 +49,9 @@ function newPaper(sizeId) {
   return paper;
 }
 
+let trialStash = null; // the real card while a shop item is tried on a practice card
+const PRACTICE_ONLY = 'This is a practice card for trying – go “Back to my card” to save or download.';
+
 export const useStore = create((set, get) => ({
   // card
   cardSize: 'a4',
@@ -79,6 +84,10 @@ export const useStore = create((set, get) => ({
   stickerId: 'star',
   stickerSize: 220,
   stickerRot: 0,
+  // the next text to place (round 38: + alignment, underline, strikethrough, list, letter and line spacing)
+  // gift shop (round 40): the tools' look and each tape roll's design (only items the account owns are used)
+  toolSkin: read('giftit.toolSkin', 'classic'),
+  rollDesign: read('giftit.rollDesign', {}),
   // the next text to place (round 38: + alignment, underline, strikethrough, list, letter and line spacing)
   textSpec: { text: 'Happy Birthday!', family: ALL_FONTS.find((f) => f.label === 'Pacifico')?.family || ALL_FONTS[0].family, size: 120, color: '#e63946', bold: false, italic: false, ...TEXT_DEFAULTS },
 
@@ -203,7 +212,40 @@ export const useStore = create((set, get) => ({
   setSticker: (patch) => set(patch),
   setTextSpec: (patch) => set((s) => ({ textSpec: { ...s.textSpec, ...patch } })),
   setMenu: (menuOpen) => set({ menuOpen }),
-  setPanel: (panel) => set({ panel, menuOpen: panel ? false : get().menuOpen }),
+  setPanel: (panel) => {
+    // the practice card of "Try it" can't be saved, downloaded or swapped for a saved card
+    if (get().trial && (panel === 'export' || panel === 'portfolio')) { get().showToast(PRACTICE_ONLY, 'error'); return; }
+    set({ panel, menuOpen: panel ? false : get().menuOpen });
+  },
+
+  // ---- "Try it" (round 42): play with a shop item on a separate practice card before buying it ----
+  trial: null, // { id, name } of the item being tried
+  startTrial: (item) => {
+    const s = get();
+    s.paper.cancelLive();
+    if (!s.trial) { // put the real card aside (exactly as it is, with its undo steps)
+      trialStash = { paper: s.paper, cardSize: s.cardSize, designId: s.designId, title: s.title, dirtySinceSave: s.dirtySinceSave, halves: s.halves, angles: s.angles, myColors: s.myColors };
+    }
+    const paper = newPaper(s.cardSize);
+    const sheet = PAPERS.find((p) => p.id === item.id);
+    if (sheet) paper.paperColor = sheet.color;
+    else if (item.id === ALL_PAPER) paper.paperColor = '#f9a35c';
+    setTrialItem(item.id);
+    set({
+      trial: { id: item.id, name: item.name, price: item.price }, paper, designId: null, title: '', dirtySinceSave: false,
+      halves: [1, 0], angles: { v: 0, l: 0, d: 0 }, cardHeld: false, tool: null, panel: null, menuOpen: false,
+      ...(item.id.startsWith('stickers-') ? { stickerId: item.stickers?.[0] || s.stickerId } : {}),
+    });
+  },
+  endTrial: () => {
+    const s = get();
+    if (!s.trial) return;
+    s.paper.cancelLive();
+    setTrialItem(null);
+    const back = trialStash || { paper: newPaper(s.cardSize), designId: null, title: '', dirtySinceSave: false, halves: [1, 0], angles: { v: 0, l: 0, d: 0 }, myColors: emptyPalette() };
+    trialStash = null;
+    set({ ...back, cardSize: back.paper.sizeId, trial: null, tool: null, cardHeld: false });
+  },
   setTitle: (title) => set({ title }),
   markDirty: () => set({ dirtySinceSave: true }),
 
@@ -217,7 +259,22 @@ export const useStore = create((set, get) => ({
     get().paper.resize(cardSize);
     set({ cardSize, dirtySinceSave: true });
   },
+  setToolSkin: (id) => { write('giftit.toolSkin', id); set({ toolSkin: id }); },
+  /** Wear another tape design on a roll (or null = the roll's own design). */
+  setRollDesign: (variant, design) => {
+    const rollDesign = { ...get().rollDesign, [variant]: design || undefined };
+    write('giftit.rollDesign', rollDesign); set({ rollDesign });
+  },
+  /** The card's paper colour (round 40) – part of the card, saved with it. */
+  setPaperColor: (color) => { get().paper.setPaperColor(color); set({ dirtySinceSave: true }); },
+  /** Latest points and bought items from the server (also gives older accounts their welcome points). */
+  refreshAccount: async () => {
+    const s = get();
+    if (!s.token) return;
+    try { const r = await api.account(); if (get().token === s.token) get().setSession(r.user, s.token); } catch { /* offline: keep what we have */ }
+  },
   newCard: () => {
+    if (get().trial) { get().showToast(PRACTICE_ONLY, 'error'); return; }
     get().paper.cancelLive();
     set({ paper: newPaper(get().cardSize), designId: null, title: '', dirtySinceSave: false, angles: { v: 0, l: 0, d: 0 }, cardHeld: false, halves: [1, 0], myColors: emptyPalette() });
   },
