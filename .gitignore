@@ -61,3 +61,11 @@ desktop.ini
 
 # ---------------------------------------------------------------- Claude Code local files
 .claude/settings.local.json
+
+# ---------------------------------------------------------------- kept on this computer only (removed from GitHub)
+PROJECT_NOTES.txt
+CLAUDE.md
+MSA_Lab_requirements.txt
+App_Logo.jpeg
+ChooseDate.jpeg
+Logo_Title.jpeg
