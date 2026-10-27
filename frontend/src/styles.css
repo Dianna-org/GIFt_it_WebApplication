@@ -222,8 +222,9 @@ body.zoom-panning, body.zoom-panning .desk canvas { cursor: grabbing !important;
 
 /* keyboard control (round 21) */
 .kbd-focus { outline: 3px solid var(--accent); outline-offset: 3px; border-radius: 10px; }
-.pop.keys { width: min(520px, 94vw); max-height: 70vh; overflow-y: auto; left: auto; right: 0; transform: none; }
-.keys-table { border-collapse: collapse; width: 100%; font-size: 13px; }
+.pop.keys, .corner-btns .pop.keys { position: fixed; top: 12px; left: auto; transform: none; width: min(420px, calc(100vw - 24px)); max-height: calc(100vh - 24px); max-height: calc(100dvh - 24px); overflow-y: auto; overscroll-behavior: contain; padding-top: 0; z-index: 30; } /* round 44: whole window height, scrolls inside */
+.pop.keys .pop-head { position: sticky; top: 0; z-index: 1; background: #fffcf4; margin: 0 -12px 4px; padding: 10px 12px 8px; border-bottom: 1px solid var(--line); }
+.keys-table { border-collapse: collapse; width: 100%; font-size: 12px; }
 .keys-table th { text-align: left; padding: 10px 4px 4px; font-size: 11px; text-transform: uppercase; letter-spacing: 0.06em; color: var(--muted); }
 .keys-table td { padding: 4px; vertical-align: top; border-top: 1px solid var(--line); }
 .keys-cell { white-space: nowrap; width: 1%; padding-right: 10px !important; }

@@ -271,7 +271,15 @@ export const useStore = create((set, get) => ({
   refreshAccount: async () => {
     const s = get();
     if (!s.token) return;
-    try { const r = await api.account(); if (get().token === s.token) get().setSession(r.user, s.token); } catch { /* offline: keep what we have */ }
+    try {
+      const r = await api.account();
+      if (get().token === s.token) { get().setSession(r.user, s.token); get().noticeExpired(r.user); }
+    } catch { /* offline: keep what we have */ }
+  },
+  // Round 44: gift points expire after a month without using the app – the server tells us once.
+  noticeExpired: (user) => {
+    const n = user?.expiredPoints || 0;
+    if (n > 0) get().showToast(`⌛ Your ${n} gift points expired: GIFt it! wasn't used for more than a month. Download a decorated card to start collecting again!`, 'error');
   },
   newCard: () => {
     if (get().trial) { get().showToast(PRACTICE_ONLY, 'error'); return; }

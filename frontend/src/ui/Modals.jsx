@@ -55,6 +55,7 @@ export function AuthModal() {
         ? await api.login({ email: f.email, password: f.password })
         : await api.register({ email: f.email, password: f.password, displayName: f.displayName, birthDate: f.birthDate });
       setSession(r.user, r.token);
+      useStore.getState().noticeExpired(r.user);
       showToast(`Welcome, ${r.user.displayName}!`, 'success');
       setPanel(null);
     } catch (ex) { setErr(ex.message); } finally { setBusy(false); }
@@ -71,8 +72,8 @@ export function AuthModal() {
         <PaperField key="email" label="Email" type="email" value={f.email} onChange={setV('email')} tilt={0.5}
           inputProps={{ required: true, autoComplete: 'email' }} />
         <PaperField key="password" label="Password" type="password" value={f.password} onChange={setV('password')} tilt={-0.4}
-          hint={mode === 'register' ? 'At least 8 characters.' : undefined}
-          inputProps={{ required: true, minLength: mode === 'register' ? 8 : 1, autoComplete: mode === 'login' ? 'current-password' : 'new-password' }} />
+          hint={mode === 'register' ? 'At least 10 characters – a few words only you would put together is best (not your name or email).' : undefined}
+          inputProps={{ required: true, minLength: mode === 'register' ? 10 : 1, maxLength: 128, autoComplete: mode === 'login' ? 'current-password' : 'new-password' }} />
         {mode === 'register' && (
           <div className="field">
             <span className="field-label">Birth date</span>

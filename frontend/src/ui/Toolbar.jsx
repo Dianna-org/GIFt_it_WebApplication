@@ -4,7 +4,7 @@ import { useStore } from '../store.js';
 import { CARD_SIZES, DRAW_TOOLS, PASTELS, TAPE_PATTERNS, TOOL_LABELS } from '../config.js';
 import { ALL_FONTS, FONT_GROUPS, loadFont } from './fonts.js';
 import { stickersFor, stickerCanvas } from '../engine/stickers.js';
-import { TrialBar } from './Shop.jsx';
+import { TrialBar, expiryDate } from './Shop.jsx';
 import { ALL_PAPER, PAPERS, WHITE_PAPER, canUse, paperChoices, rollPattern, tapeChoices, usableIds } from '../shop/catalog.js';
 import { PATTERNS } from '../engine/patterns.js';
 import { renderStroke } from '../engine/brushes.js';
@@ -496,11 +496,27 @@ function PopHead({ title, onClose }) {
 /** "⌨ Keys": every keyboard key the app understands, with a short explanation. */
 function KeysHelp() {
   const { open, setOpen, ref } = usePopover();
+  // round 44: the button sits low in the column under the logo, so the list is pinned to the window (top to
+  // bottom, left of the column) instead of hanging from the button – it is never cut off and scrolls inside
+  const [right, setRight] = useState(0);
+  useEffect(() => {
+    if (!open) return undefined;
+    const place = () => {
+      const r = ref.current?.getBoundingClientRect();
+      if (!r) return;
+      const beside = window.innerWidth - r.left + 10;
+      // not enough room left of the column (phones): it covers the column instead
+      setRight(window.innerWidth - beside - 12 >= 280 ? beside : 12);
+    };
+    place();
+    window.addEventListener('resize', place);
+    return () => window.removeEventListener('resize', place);
+  }, [open]); // eslint-disable-line react-hooks/exhaustive-deps
   return (
     <div className="popwrap" ref={ref}>
       <button className="btn" onClick={() => setOpen(!open)} title="Keyboard keys you can use">⌨ Keys</button>
       {open && (
-        <div className="pop keys">
+        <div className="pop keys" style={{ right, maxWidth: `calc(100vw - ${right + 12}px)` }}>
           <PopHead title="Keyboard keys" onClose={() => setOpen(false)} />
           <table className="keys-table">
             <tbody>
@@ -524,7 +540,7 @@ function KeysHelp() {
 function PointsButton() {
   const user = useStore((s) => s.user);
   return (
-    <button className="btn points-btn" onClick={() => useStore.getState().setPanel('shop')} title={user ? 'Your gift points – open the gift shop' : 'Gift shop – log in to collect gift points'}>
+    <button className="btn points-btn" onClick={() => useStore.getState().setPanel('shop')} title={user ? `Your gift points – open the gift shop${user.pointsExpire ? ` (they expire if GIFt it! isn't used until ${expiryDate(user.pointsExpire)})` : ''}` : 'Gift shop – log in to collect gift points'}>
       🎁 {user ? <><b>{user.points ?? 0}</b> points</> : 'Gift shop'}
     </button>
   );
@@ -551,14 +567,15 @@ function PaperPicker() {
       {open && (
         <div className="pop paper-pop">
           <PopHead title="Paper colour" onClose={() => setOpen(false)} />
-          <div className="pop-grid">
+          {/* round 45: with "All coloured paper" only the colour picker is shown – the single colours are in it */}
+          {!any && <div className="pop-grid">
             {choices.map((p) => (
               <button key={p.id} className={'swatch paper-swatch' + (p.color.toLowerCase() === cur.toLowerCase() ? ' on' : '')} style={{ background: p.color }} title={p.name} aria-label={p.name} onClick={() => pick(p.color)} />
             ))}
             {locked.map((p) => (
               <button key={p.id} className="swatch paper-swatch locked" style={{ background: p.color }} title={`${p.name} – in the gift shop`} aria-label={`${p.name} (locked)`} onClick={() => useStore.getState().setPanel('shop')}>🔒</button>
             ))}
-          </div>
+          </div>}
           {any ? (
             <label className="pick-any">
               <span className="swatch custom"><input type="color" value={cur} onChange={(e) => pick(e.target.value)} aria-label="Any paper colour" /><span style={{ background: cur }} /></span>

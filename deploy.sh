@@ -10,6 +10,10 @@ if [ ! -f .env ]; then
   echo "No .env found – creating one with a new random JWT_KEY..."
   echo "JWT_KEY=$(openssl rand -hex 32 2> /dev/null || head -c 32 /dev/urandom | od -An -tx1 | tr -d ' \n')" > .env
 fi
+# Round 44: a random secret "pepper" for the password hashes, added once to .env (never change it afterwards)
+if ! grep -q '^PASSWORD_PEPPER=' .env; then
+  echo "PASSWORD_PEPPER=$(openssl rand -hex 32 2> /dev/null || head -c 32 /dev/urandom | od -An -tx1 | tr -d ' \n')" >> .env
+fi
 set -a && . ./.env && set +a
 
 WEB_PORT="${WEB_PORT:-3000}"

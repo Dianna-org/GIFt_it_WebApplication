@@ -81,6 +81,14 @@ public static class GiftShop
         new("tool-calligraphy", "tool", 200), new("tool-spray", "tool", 200), // brand-new drawing tools (round 41)
     };
 
+    /// <summary>Round 44: gift points expire after this many days of not using the app at all.</summary>
+    public const int PointsExpireDays = 30;
+
+    /// <summary>True when the points have expired: the last use of the app was more than PointsExpireDays ago.
+    /// Accounts from before round 44 (no last use known yet) start counting now.</summary>
+    public static bool PointsExpired(DateTime? lastActive, DateTime now) =>
+        lastActive is { } t && now - t > TimeSpan.FromDays(PointsExpireDays);
+
     public static Item? Find(string? id) => Items.FirstOrDefault(i => i.Id == id);
 
     /// <summary>A card's key made in the browser (random letters/digits/dashes); "d-&lt;design id&gt;" for cards

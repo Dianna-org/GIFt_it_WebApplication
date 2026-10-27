@@ -53,7 +53,8 @@ export function ShopPage() {
         <div className="page-title">
           <h1>🎁 Gift shop</h1>
           {user
-            ? <p>You have <b className="points-big">{user.points ?? 0}</b> gift points · every new card you decorate and save to your computer (picture or GIF) gives you {shop?.pointsPerCard ?? 50} more</p>
+            ? <p>You have <b className="points-big">{user.points ?? 0}</b> gift points · every new card you decorate and save to your computer (picture or GIF) gives you {shop?.pointsPerCard ?? 50} more
+                <br /><small className="muted">⌛ Points expire if you don't use GIFt it! for {shop?.expireDays ?? 30} days{user.pointsExpire ? <> – use it before <b>{expiryDate(user.pointsExpire)}</b> to keep them</> : null}.</small></p>
             : <p>Log in to collect gift points: {shop?.welcomePoints ?? 100} to start, and {shop?.pointsPerCard ?? 50} for every new card you decorate and save to your computer as a picture or GIF.</p>}
         </div>
       </header>
@@ -111,6 +112,12 @@ export function ShopPage() {
       </main>
     </div>
   );
+}
+
+/** "26 November 2026" (round 44: when the gift points expire if the app isn't used until then). */
+export function expiryDate(iso) {
+  const d = new Date(iso);
+  return Number.isNaN(d.getTime()) ? '' : d.toLocaleDateString('en-GB', { day: 'numeric', month: 'long', year: 'numeric' });
 }
 
 /** Ask, buy, and put a new look on straight away. Returns true when bought. */

@@ -22,6 +22,14 @@ public class User
     public List<string> RewardedCards { get; set; } = new();
     public List<DateTime> RewardTimes { get; set; } = new();
     public DateTime CreatedAt { get; set; } = DateTime.UtcNow;
+    /// <summary>Round 44: the last time the user used the app (any request while logged in, or logging in). Gift
+    /// points expire after GiftShop.PointsExpireDays days without any. null = account from before round 44.</summary>
+    public DateTime? LastActiveAt { get; set; }
+    /// <summary>Round 44: how many points just expired – shown to the user once, then set back to 0.</summary>
+    public int ExpiredPoints { get; set; }
+    /// <summary>Round 44: wrong passwords in a row, and until when the account is locked after too many.</summary>
+    public int FailedLogins { get; set; }
+    public DateTime? LockedUntil { get; set; }
 }
 
 public class Design

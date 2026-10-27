@@ -17,6 +17,7 @@ services:
       Mongo__ConnectionString: mongodb://mongo:27017
       Mongo__Database: birthdaycards
       Jwt__Key: ${JWT_KEY:?Copy .env.example to .env first}
+      Security__PasswordPepper: ${PASSWORD_PEPPER:?Run ./deploy.sh once (it adds PASSWORD_PEPPER to .env)}
       Cors__Origins: http://localhost:3000
     depends_on:
       mongo:

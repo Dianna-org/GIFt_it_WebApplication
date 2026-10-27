@@ -11,6 +11,10 @@ cd "$(dirname "$0")"
 if [ ! -f .env ]; then
     echo "JWT_KEY=$(openssl rand -hex 32 2> /dev/null || head -c 32 /dev/urandom | od -An -tx1 | tr -d ' \n')" > .env
 fi
+# Round 44: a random secret "pepper" for the password hashes, added once to .env (never change it afterwards)
+if ! grep -q '^PASSWORD_PEPPER=' .env; then
+  echo "PASSWORD_PEPPER=$(openssl rand -hex 32 2> /dev/null || head -c 32 /dev/urandom | od -An -tx1 | tr -d ' \n')" >> .env
+fi
 set -a && . ./.env && set +a
 
 BACKEND_PORT="${BACKEND_PORT:-5080}"
@@ -74,6 +78,7 @@ echo "Starting backend..."
     Mongo__ConnectionString="mongodb://localhost:${MONGODB_PORT}" \
     Mongo__Database=birthdaycards \
     Jwt__Key="${JWT_KEY}" \
+    Security__PasswordPepper="${PASSWORD_PEPPER}" \
     Cors__Origins="http://localhost:${FRONTEND_PORT}" \
     exec dotnet run --no-build --no-launch-profile
 ) &

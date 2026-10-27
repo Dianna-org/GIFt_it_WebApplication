@@ -3,7 +3,6 @@ using System.Text;
 using System.Threading.RateLimiting;
 using CardApi;
 using Microsoft.AspNetCore.Authentication.JwtBearer;
-using Microsoft.AspNetCore.Identity;
 using Microsoft.AspNetCore.RateLimiting;
 using Microsoft.IdentityModel.Tokens;
 using MongoDB.Bson;
@@ -16,6 +15,22 @@ var jwtKey = builder.Configuration["Jwt:Key"] ?? "dev-only-secret-change-me-plea
 var mongoConn = builder.Configuration["Mongo:ConnectionString"] ?? "mongodb://localhost:27017";
 var mongoDb = builder.Configuration["Mongo:Database"] ?? "birthdaycards";
 var corsOrigins = (builder.Configuration["Cors:Origins"] ?? "http://localhost:3000").Split(',', StringSplitOptions.RemoveEmptyEntries);
+// Round 44: the password pepper (a secret mixed into every password hash, kept out of the database). Like the
+// JWT key it comes from .env (made by deploy.sh / runlocal.sh); a weak or missing secret stops the server
+// instead of running unsafely. Only `dotnet run` in Development may use the built-in ones.
+var pepper = builder.Configuration["Security:PasswordPepper"] ?? "";
+if (builder.Environment.IsDevelopment())
+{
+    if (pepper.Length < 32) pepper = "dev-only-pepper-change-me-please-0123456789";
+}
+else
+{
+    if (jwtKey.Length < 32 || jwtKey.StartsWith("dev-only") || jwtKey.StartsWith("replace-with"))
+        throw new InvalidOperationException("Jwt:Key must be a random secret of at least 32 characters (see .env.example).");
+    if (pepper.Length < 32 || pepper.StartsWith("replace-with"))
+        throw new InvalidOperationException("Security:PasswordPepper must be a random secret of at least 32 characters (see .env.example).");
+}
+const string TokenIssuer = "giftit-api", TokenAudience = "giftit-web";
 
 builder.WebHost.ConfigureKestrel(o => o.Limits.MaxRequestBodySize = 25 * 1024 * 1024);
 
@@ -23,15 +38,17 @@ builder.Services.AddSingleton<IMongoClient>(new MongoClient(mongoConn));
 builder.Services.AddSingleton(sp => sp.GetRequiredService<IMongoClient>().GetDatabase(mongoDb));
 builder.Services.AddSingleton(sp => sp.GetRequiredService<IMongoDatabase>().GetCollection<User>("users"));
 builder.Services.AddSingleton(sp => sp.GetRequiredService<IMongoDatabase>().GetCollection<Design>("designs"));
-builder.Services.AddSingleton<IPasswordHasher<User>, PasswordHasher<User>>();
+builder.Services.AddSingleton(new PasswordSecurity(pepper));
 
 builder.Services.AddAuthentication(JwtBearerDefaults.AuthenticationScheme)
     .AddJwtBearer(o =>
     {
         o.TokenValidationParameters = new TokenValidationParameters
         {
-            ValidateIssuer = false,
-            ValidateAudience = false,
+            ValidateIssuer = true, ValidIssuer = TokenIssuer,
+            ValidateAudience = true, ValidAudience = TokenAudience,
+            ValidateLifetime = true, RequireExpirationTime = true,
+            ValidAlgorithms = new[] { SecurityAlgorithms.HmacSha256 }, // only the algorithm we sign with ("none" etc. refused)
             ValidateIssuerSigningKey = true,
             IssuerSigningKey = new SymmetricSecurityKey(Encoding.UTF8.GetBytes(jwtKey)),
             ClockSkew = TimeSpan.FromMinutes(1)
@@ -53,6 +70,16 @@ app.UseCors();
 app.UseRateLimiter();
 app.UseAuthentication();
 app.UseAuthorization();
+
+// Round 44: every request of a logged-in user counts as using the app (keeps the gift points from expiring –
+// or takes them away first when the last use was more than GiftShop.PointsExpireDays days ago).
+app.Use(async (ctx, next) =>
+{
+    var uid = ctx.User.FindFirstValue(ClaimTypes.NameIdentifier);
+    if (uid is not null && ObjectId.TryParse(uid, out _))
+        await Touch(uid, ctx.RequestServices.GetRequiredService<IMongoCollection<User>>());
+    await next();
+});
 
 // Indexes
 {
@@ -79,12 +106,49 @@ string CreateToken(User u)
 {
     var creds = new SigningCredentials(new SymmetricSecurityKey(Encoding.UTF8.GetBytes(jwtKey)), SecurityAlgorithms.HmacSha256);
     var token = new System.IdentityModel.Tokens.Jwt.JwtSecurityToken(
+        issuer: TokenIssuer, audience: TokenAudience,
         claims: new[] { new Claim(ClaimTypes.NameIdentifier, u.Id), new Claim(ClaimTypes.Name, u.DisplayName) },
         expires: DateTime.UtcNow.AddDays(7), signingCredentials: creds);
     return new System.IdentityModel.Tokens.Jwt.JwtSecurityTokenHandler().WriteToken(token);
 }
 
-object UserDto(User u) => new { id = u.Id, email = u.Email, displayName = u.DisplayName, avatar = u.Avatar ?? "", points = u.Points, owned = u.Owned ?? new() };
+object UserDto(User u) => new
+{
+    id = u.Id, email = u.Email, displayName = u.DisplayName, avatar = u.Avatar ?? "", points = u.Points, owned = u.Owned ?? new(),
+    // round 44: when the points expire if the app isn't used until then, and points that just expired (shown once)
+    pointsExpire = (u.LastActiveAt ?? DateTime.UtcNow).AddDays(GiftShop.PointsExpireDays), expiredPoints = u.ExpiredPoints,
+};
+
+// Round 44: the user is using the app now. If they hadn't for more than PointsExpireDays days, their points
+// expire first (remembered in ExpiredPoints, so the app can tell them once). Returns the user as it is now.
+async Task<User?> Touch(string uid, IMongoCollection<User> users)
+{
+    var now = DateTime.UtcNow;
+    var u = await users.Find(x => x.Id == uid).FirstOrDefaultAsync();
+    if (u is null) return null;
+    if (GiftShop.PointsExpired(u.LastActiveAt, now) && u.Points > 0)
+    {
+        // only if nothing changed since it was read (another request may just have used or earned points)
+        var after = await users.FindOneAndUpdateAsync(x => x.Id == uid && x.LastActiveAt == u.LastActiveAt && x.Points == u.Points,
+            Builders<User>.Update.Set(x => x.Points, 0).Inc(x => x.ExpiredPoints, u.Points).Set(x => x.LastActiveAt, now),
+            new FindOneAndUpdateOptions<User> { ReturnDocument = ReturnDocument.After });
+        return after ?? await users.Find(x => x.Id == uid).FirstOrDefaultAsync();
+    }
+    // written at most once a minute: a busy app sends many requests
+    if (u.LastActiveAt is null || now - u.LastActiveAt.Value > TimeSpan.FromMinutes(1))
+    {
+        await users.UpdateOneAsync(x => x.Id == uid, Builders<User>.Update.Set(x => x.LastActiveAt, now));
+        u.LastActiveAt = now;
+    }
+    return u;
+}
+
+// The "your points expired" message is shown once: the answer still has it, the account no longer does.
+async Task<User> TakeExpiryNotice(User u, IMongoCollection<User> users)
+{
+    if (u.ExpiredPoints > 0) await users.UpdateOneAsync(x => x.Id == u.Id, Builders<User>.Update.Set(x => x.ExpiredPoints, 0));
+    return u;
+}
 
 // Accounts made before the gift shop existed get their welcome points once (round 40).
 async Task<User> StartShop(User u, IMongoCollection<User> users)
@@ -102,7 +166,7 @@ app.MapGet("/api/health", () => Results.Ok(new { status = "ok" }));
 
 var auth = app.MapGroup("/api/auth").RequireRateLimiting("auth");
 
-auth.MapPost("/register", async (RegisterRequest r, IMongoCollection<User> users, IPasswordHasher<User> hasher) =>
+auth.MapPost("/register", async (RegisterRequest r, IMongoCollection<User> users, PasswordSecurity passwords) =>
 {
     var email = (r.Email ?? "").Trim().ToLowerInvariant();
     var name = (r.DisplayName ?? "").Trim();
@@ -112,8 +176,8 @@ auth.MapPost("/register", async (RegisterRequest r, IMongoCollection<User> users
         return Results.BadRequest(new { error = "Display name must be 2-30 characters." });
     if (ProfanityFilter.Contains(name))
         return Results.BadRequest(new { error = "Please choose a different display name." });
-    if ((r.Password ?? "").Length < 8)
-        return Results.BadRequest(new { error = "Password must be at least 8 characters." });
+    if (PasswordRules.Problem(r.Password, email, name) is { } weak)
+        return Results.BadRequest(new { error = weak });
     if (r.BirthDate > DateTime.UtcNow || r.BirthDate.Year < 1900)
         return Results.BadRequest(new { error = "Please enter a valid birth date." });
     if (!AgeRules.IsAtLeast(r.BirthDate, DateTime.UtcNow))
@@ -121,20 +185,43 @@ auth.MapPost("/register", async (RegisterRequest r, IMongoCollection<User> users
     if (await users.Find(u => u.Email == email).AnyAsync())
         return Results.Conflict(new { error = "An account with this email already exists." });
 
-    var user = new User { Email = email, DisplayName = name, BirthDate = r.BirthDate.Date, Points = GiftShop.WelcomePoints, ShopStarted = true };
-    user.PasswordHash = hasher.HashPassword(user, r.Password!);
+    var user = new User { Email = email, DisplayName = name, BirthDate = r.BirthDate.Date, Points = GiftShop.WelcomePoints, ShopStarted = true, LastActiveAt = DateTime.UtcNow };
+    user.PasswordHash = passwords.Hash(r.Password!); // Argon2id + its own random salt + the pepper (round 44)
     try { await users.InsertOneAsync(user); }
     catch (MongoWriteException) { return Results.Conflict(new { error = "An account with this email already exists." }); }
     return Results.Ok(new { token = CreateToken(user), user = UserDto(user) });
 });
 
-auth.MapPost("/login", async (LoginRequest r, IMongoCollection<User> users, IPasswordHasher<User> hasher) =>
+auth.MapPost("/login", async (LoginRequest r, IMongoCollection<User> users, PasswordSecurity passwords) =>
 {
     var email = (r.Email ?? "").Trim().ToLowerInvariant();
+    var password = r.Password ?? "";
+    var wrong = Results.Json(new { error = "Incorrect email or password." }, statusCode: 401);
+    if (password.Length > PasswordRules.MaxLength) return wrong;
     var user = await users.Find(u => u.Email == email).FirstOrDefaultAsync();
-    if (user is null || hasher.VerifyHashedPassword(user, user.PasswordHash, r.Password ?? "") == PasswordVerificationResult.Failed)
-        return Results.Json(new { error = "Incorrect email or password." }, statusCode: 401);
-    user = await StartShop(user, users);
+    if (user is null) { passwords.VerifyNobody(password); return wrong; } // same time as a wrong password
+    var now = DateTime.UtcNow;
+    if (LoginLock.IsLocked(user.LockedUntil, now))
+        return Results.Json(new { error = $"Too many wrong passwords for this account. Please wait {LoginLock.MinutesLeft(user.LockedUntil!.Value, now)} minutes and try again." }, statusCode: 429);
+    var check = passwords.Verify(user.PasswordHash, password);
+    if (check == PasswordSecurity.Result.Failed)
+    {
+        var after = await users.FindOneAndUpdateAsync(u => u.Id == user.Id, Builders<User>.Update.Inc(u => u.FailedLogins, 1),
+            new FindOneAndUpdateOptions<User> { ReturnDocument = ReturnDocument.After });
+        if (after is not null && after.FailedLogins >= LoginLock.MaxFailures)
+        {
+            await users.UpdateOneAsync(u => u.Id == user.Id,
+                Builders<User>.Update.Set(u => u.FailedLogins, 0).Set(u => u.LockedUntil, now + LoginLock.LockFor));
+            return Results.Json(new { error = $"Too many wrong passwords for this account. Please wait {(int)LoginLock.LockFor.TotalMinutes} minutes and try again." }, statusCode: 429);
+        }
+        return wrong;
+    }
+    var fix = Builders<User>.Update.Set(u => u.FailedLogins, 0).Set(u => u.LockedUntil, null);
+    // an older or weaker hash is replaced by a new Argon2id one now that we know the password
+    if (check == PasswordSecurity.Result.OkButRehash) fix = fix.Set(u => u.PasswordHash, passwords.Hash(password));
+    await users.UpdateOneAsync(u => u.Id == user.Id, fix);
+    user = await Touch(user.Id, users) ?? user;
+    user = await TakeExpiryNotice(await StartShop(user, users), users);
     return Results.Ok(new { token = CreateToken(user), user = UserDto(user) });
 });
 
@@ -143,13 +230,13 @@ app.MapGet("/api/account", async (ClaimsPrincipal p, IMongoCollection<User> user
 {
     var user = await users.Find(u => u.Id == p.FindFirstValue(ClaimTypes.NameIdentifier)).FirstOrDefaultAsync();
     if (user is null) return Results.NotFound();
-    return Results.Ok(new { user = UserDto(await StartShop(user, users)) });
+    return Results.Ok(new { user = UserDto(await TakeExpiryNotice(await StartShop(user, users), users)) });
 }).RequireAuthorization();
 
 // ---------------------------------------------------------------- gift shop (round 40)
 app.MapGet("/api/shop", () => Results.Ok(new
 {
-    pointsPerCard = GiftShop.PointsPerCard, welcomePoints = GiftShop.WelcomePoints,
+    pointsPerCard = GiftShop.PointsPerCard, welcomePoints = GiftShop.WelcomePoints, expireDays = GiftShop.PointsExpireDays,
     items = GiftShop.Items.Select(i => new { id = i.Id, kind = i.Kind, price = i.Price }),
 }));
 
