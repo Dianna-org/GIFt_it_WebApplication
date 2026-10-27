@@ -50,7 +50,7 @@ export function Menu() {
           <>
             <input className="text" type="text" maxLength={40} placeholder="Title (optional)" value={title} onChange={(e) => setTitle(e.target.value)} />
             <button className="btn primary wide" disabled={busy} onClick={saveDesign}>
-              {busy ? 'Saving…' : designId ? 'Save changes (same slot)' : 'Save to my portfolio'}
+              {busy ? 'Saving…' : designId ? 'Save changes' : 'Save to my portfolio'}
             </button>
             <button className="btn wide" onClick={() => setPanel('portfolio')}>Open my portfolio</button>
           </>

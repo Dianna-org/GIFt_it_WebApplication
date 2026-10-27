@@ -10,6 +10,10 @@ const write = (key, value) => {
 };
 
 const saved = read('cardstudio.session', null);
+// the desk's background colour survives a page refresh (round 35); a saved card keeps its own colour too
+const BG_KEY = 'giftit.background';
+const isHex = (c) => typeof c === 'string' && /^#[0-9a-f]{6}$/i.test(c);
+const savedBg = read(BG_KEY, null);
 export const MY_COLOR_SLOTS = 12;
 export const ZOOM_MAX = 8;
 export const ZOOM_ANIM_MS = 750;
@@ -51,7 +55,7 @@ export const useStore = create((set, get) => ({
   cardHeld: false,
   // Fold of the left and right half of the sheet (see scene/Card.jsx). [1, 0] = closed on the front cover.
   halves: [1, 0],
-  bg: DEFAULT_BG,
+  bg: isHex(savedBg) ? savedBg : DEFAULT_BG,
   // Zoom on the card: 0 = normal view; otherwise the screen splits (tools left, magnified card right).
   zoom: 0,
   zoomClosing: false, // "Zoom out" was pressed: the split view is animating away
@@ -158,7 +162,7 @@ export const useStore = create((set, get) => ({
   },
   setToolSetting: (tool, patch) =>
     set((s) => ({ toolSettings: { ...s.toolSettings, [tool]: { ...s.toolSettings[tool], ...patch } } })),
-  setBg: (bg) => set({ bg }),
+  setBg: (bg) => set({ bg, dirtySinceSave: true }), // part of the card: saving stores it with the design
   turnCard: (axis, deg) => set((s) => {
     const angles = { ...s.angles, [axis]: s.angles[axis] + deg };
     // tilting a lying card would push it into the desk, so pick it up first
@@ -217,7 +221,7 @@ export const useStore = create((set, get) => ({
   async openDesign(d) {
     const paper = newPaper(d.cardSize);
     await paper.load(d);
-    set({ cardSize: d.cardSize, paper, designId: d.id, title: d.title || '', bg: d.background || get().bg, myColors: normalizePalette(d.palette), angles: { v: 0, l: 0, d: 0 }, cardHeld: false, dirtySinceSave: false });
+    set({ cardSize: d.cardSize, paper, designId: d.id, title: d.title || '', bg: isHex(d.background) ? d.background : get().bg, myColors: normalizePalette(d.palette), angles: { v: 0, l: 0, d: 0 }, cardHeld: false, dirtySinceSave: false });
   },
 
   setSession: (user, token) => {
@@ -230,6 +234,7 @@ export const useStore = create((set, get) => ({
 // another tool (or put it back, or take another tape roll) the panel comes back.
 // (The automatic tape -> scissors -> tape switch while cutting a piece of tape is the same job: sameJob.)
 useStore.subscribe((s, prev) => {
+  if (s.bg !== prev.bg) write(BG_KEY, s.bg); // remembered for the next visit / refresh
   if (s.sameJob) { useStore.setState({ sameJob: false }); return; }
   if (s.panelHidden && (s.tool !== prev.tool || s.tapePattern !== prev.tapePattern)) useStore.setState({ panelHidden: false });
   if ((s.kbdRow || s.kbdOn) && s.tool !== prev.tool) useStore.setState({ kbdRow: 0, kbdOn: false }); // new tool: start at its first setting

@@ -1095,22 +1095,26 @@ export class CardPaper {
     return { image: png(this.flatFace('inside')), layers, texts: this.texts, shapes };
   }
   /**
-   * Portfolio picture (round 30): both sides of the sheet – the outside (back + front cover) on top, the
-   * inside spread below – big enough for the full-screen portfolio page.
+   * Portfolio picture (round 36): the card the way it first appears – folded shut, front cover facing you –
+   * with everything on it, lying on the desk colour that was chosen when it was saved (`bg`).
+   * The front cover is the right half of the outside face (the zoom map calls it "cover" too).
    */
-  thumbnail(maxW = 900) {
-    const pad = Math.round(maxW * 0.03), fw = maxW - pad * 2, fh = Math.round((fw * this.h) / this.w);
-    const c = makeCanvas(maxW, fh * 2 + pad * 3);
+  thumbnail(bg = '#efe8d6', size = 900) {
+    const c = makeCanvas(size, size);
     const g = ctx2d(c);
-    g.fillStyle = '#efe8d6'; g.fillRect(0, 0, c.width, c.height);
-    ['outside', 'inside'].forEach((face, i) => {
-      const y = pad + i * (fh + pad);
-      g.save(); g.shadowColor = 'rgba(60, 40, 0, 0.25)'; g.shadowBlur = pad * 0.6; g.shadowOffsetY = pad * 0.15;
-      g.fillStyle = '#fff'; g.fillRect(pad, y, fw, fh); g.restore();
-      g.drawImage(this.flatFace(face, 0.3), pad, y, fw, fh);
-    });
-    return c.toDataURL('image/jpeg', 0.84);
+    g.fillStyle = bg; g.fillRect(0, 0, size, size);
+    const coverW = this.w / 2, coverH = this.h;
+    const k = Math.min((size * 0.8) / coverW, (size * 0.8) / coverH);
+    const w = coverW * k, h = coverH * k, x = (size - w) / 2, y = (size - h) / 2;
+    const cover = makeCanvas(Math.round(w), Math.round(h));
+    ctx2d(cover).drawImage(this.flatFace('outside', 0.3), coverW, 0, coverW, coverH, 0, 0, cover.width, cover.height);
+    g.save(); // the card's shadow on the desk (follows cut-out shapes too)
+    g.shadowColor = 'rgba(40, 30, 10, 0.35)'; g.shadowBlur = size * 0.035; g.shadowOffsetX = size * 0.008; g.shadowOffsetY = size * 0.018;
+    g.drawImage(cover, x, y);
+    g.restore();
+    return c.toDataURL('image/jpeg', 0.86);
   }
+
 
   async load(design) {
     const loadImg = (u) => new Promise((res, rej) => { const i = new Image(); i.onload = () => res(i); i.onerror = rej; i.src = u; });

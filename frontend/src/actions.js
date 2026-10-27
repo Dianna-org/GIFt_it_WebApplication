@@ -27,7 +27,7 @@ export async function saveDesign() {
     const data = s.paper.serialize();
     const payload = {
       title: s.title.trim(), cardSize: s.cardSize, background: s.bg,
-      image: data.image, layers: data.layers, thumbnail: s.paper.thumbnail(), texts: data.texts, shapes: data.shapes,
+      image: data.image, layers: data.layers, thumbnail: s.paper.thumbnail(s.bg), texts: data.texts, shapes: data.shapes, // picture: the closed card on its background
       palette: s.myColors.map((c) => c || ''),
     };
     if (s.designId) {
