@@ -6,7 +6,7 @@ import { stickerCanvas } from './stickers.js';
 import { labelPieces } from './pieces.js';
 import { floodRegion, growMask } from './fill.js';
 import { recognizeShape } from './shapes.js';
-import { drawShape, shapeBounds, handleAt, handlePositions, cleanShape, textLayout } from './shapeLibrary.js';
+import { drawShape, shapeBounds, handleAt, handlePositions, cleanShape, textLayout, TEXT_PAD } from './shapeLibrary.js';
 
 // "Hold to perfect": keeping a drawing tool still (within HOLD_RADIUS px) for HOLD_MS at the end of a stroke
 // turns the wobbly drawing into the perfect version of the same shape. Moving on afterwards undoes the snap.
@@ -154,16 +154,6 @@ export function measureText(spec) {
   const lineH = spec.size * 1.2;
   const w = Math.max(10, ...lines.map((l) => c.measureText(l).width));
   return { lines, lineH, w, h: lineH * lines.length };
-}
-
-function paintText(ctx, spec, cx, cy, scale) {
-  const m = measureText(spec);
-  ctx.save();
-  ctx.translate(cx, cy); ctx.scale(scale, scale);
-  ctx.font = fontOf(spec);
-  ctx.fillStyle = spec.color; ctx.textBaseline = 'middle'; ctx.textAlign = 'center';
-  m.lines.forEach((l, i) => ctx.fillText(l, 0, (i - (m.lines.length - 1) / 2) * m.lineH));
-  ctx.restore();
 }
 
 /** Where the text box really ends up: always completely inside the card. */
@@ -603,15 +593,22 @@ export class CardPaper {
    */
   placeText(face, spec, x, y) {
     if (!spec.text || !spec.text.trim()) return null;
-    const box = placeTextBox(spec, x, y, this.w, this.h);
-    return this.addShape(face, {
-      kind: 'text', text: spec.text, family: spec.family, size: spec.size * box.scale, bold: spec.bold, italic: spec.italic,
-      color: spec.color, x: box.x, y: box.y, w: box.w + 12, h: box.h, rot: 0, // +12: the lines never wrap at first
-    });
+    return this.addShape(face, this.textBoxFor(spec, x, y));
+  }
+  /**
+   * The text box a spec makes at (x, y): as wide as its longest line (so nothing wraps at first), as tall as
+   * its lines, made smaller if needed so it fits inside the card (also used for the preview).
+   */
+  textBoxFor(spec, x, y) {
+    const lay = textLayout({ ...spec, w: 1e6 }, this.textMeasure(spec));
+    const w = lay.maxW + TEXT_PAD * 2 + 12, h = lay.needH;
+    const f = fitBoxInside(x, y, w, h, this.w, this.h);
+    return { ...cleanShape({ ...spec, kind: 'text', x: f.x, y: f.y, w: w * f.scale, h: h * f.scale, size: spec.size * f.scale, rot: 0 }), id: undefined };
   }
   textMeasure(t) {
     const c = measureText.ctx || (measureText.ctx = ctx2d(makeCanvas(1, 1)));
     c.font = fontOf(t);
+    c.letterSpacing = `${(t.letterSpacing || 0) * t.size}px`; // letter spacing is stored as a part of the font size
     return (str) => c.measureText(str).width;
   }
   /** A text box is always tall enough for its lines (and wide enough for one letter). */
@@ -620,12 +617,39 @@ export class CardPaper {
     t.h = Math.max(t.h, textLayout(t, this.textMeasure(t)).needH);
   }
   /** Draws a text box: lines wrapped to its width, centred in the box, turned with it. */
+  /**
+   * Draws a text box: lines wrapped to its width, the block centred in the box, turned with it.
+   * Round 38: alignment (left / centre / right / justify like Word), bullets or numbers with a hanging indent,
+   * letter spacing, line spacing, underline and strikethrough.
+   */
   paintTextBox(g, t) {
-    const { lines, lineH } = textLayout(t, this.textMeasure(t));
+    const measure = this.textMeasure(t);
+    const { lines, lineH } = textLayout(t, measure);
+    const half = t.w / 2 - TEXT_PAD, align = t.align || 'center';
+    const deco = Math.max(1, t.size * 0.06); // thickness of the underline / strikethrough
     g.save();
     g.translate(t.x, t.y); g.rotate(t.rot || 0);
-    g.font = fontOf(t); g.fillStyle = t.color; g.textAlign = 'center'; g.textBaseline = 'middle';
-    lines.forEach((l, i) => g.fillText(l, 0, (i - (lines.length - 1) / 2) * lineH));
+    g.font = fontOf(t); g.letterSpacing = `${(t.letterSpacing || 0) * t.size}px`;
+    g.fillStyle = t.color; g.textAlign = 'left'; g.textBaseline = 'middle';
+    lines.forEach((l, i) => {
+      const y = (i - (lines.length - 1) / 2) * lineH;
+      const total = l.indent + l.width;
+      const x0 = align === 'right' ? half - total : align === 'center' ? -total / 2 : -half; // left + justify
+      if (l.prefix) g.fillText(l.prefix, x0, y);
+      const x = x0 + l.indent;
+      let w = l.width;
+      const words = l.text.split(' ').filter(Boolean);
+      if (align === 'justify' && !l.last && words.length > 1) {
+        // spread the words so the line reaches both sides (not the last line of a paragraph, like Word)
+        const wordsW = words.reduce((s, wd) => s + measure(wd), 0);
+        const gap = (half * 2 - l.indent - wordsW) / (words.length - 1);
+        let cx = x;
+        for (const wd of words) { g.fillText(wd, cx, y); cx += measure(wd) + gap; }
+        w = half * 2 - l.indent;
+      } else if (l.text) g.fillText(l.text, x, y);
+      if (w > 0 && t.underline) g.fillRect(x, y + t.size * 0.38, w, deco);
+      if (w > 0 && t.strike) g.fillRect(x, y - t.size * 0.03, w, deco);
+    });
     g.restore();
   }
 
@@ -636,7 +660,7 @@ export class CardPaper {
   }
   ghostRect(gh) {
     if (gh.kind === 'sticker') { const r = gh.size * 0.75 + 8; return { x: gh.x - r, y: gh.y - r, w: r * 2, h: r * 2 }; }
-    if (gh.kind === 'text') { const b = placeTextBox(gh.spec, gh.x, gh.y, this.w, this.h); return { x: b.x - b.w / 2 - 12, y: b.y - b.h / 2 - 12, w: b.w + 24, h: b.h + 24 }; }
+    if (gh.kind === 'text') { const b = this.textBoxFor(gh.spec, gh.x, gh.y); return { x: b.x - b.w / 2 - 12, y: b.y - b.h / 2 - 12, w: b.w + 24, h: b.h + 24 }; }
     if (gh.kind === 'tapecut') return boundsOf([gh.A, gh.B], 8);
     if (gh.kind === 'shape') return shapeBounds(gh.shape, gh.shape.width + 8);
     if (gh.kind === 'eraser') { const r = gh.size / 2 + 6; return { x: gh.x - r, y: gh.y - r, w: r * 2, h: r * 2 }; }
@@ -1035,8 +1059,8 @@ export class CardPaper {
       g.save(); g.globalAlpha = 0.75; g.translate(gh.x, gh.y); g.rotate(gh.rot);
       g.drawImage(stickerCanvas(gh.id), -gh.size / 2, -gh.size / 2, gh.size, gh.size); g.restore();
     } else if (gh.kind === 'text') {
-      const box = placeTextBox(gh.spec, gh.x, gh.y, this.w, this.h);
-      paintText(g, gh.spec, box.x, box.y, box.scale);
+      const box = this.textBoxFor(gh.spec, gh.x, gh.y); // the preview is drawn exactly like the placed text
+      g.save(); g.globalAlpha = 0.85; this.paintTextBox(g, box); g.restore();
       g.save(); g.strokeStyle = 'rgba(42,157,143,.8)'; g.lineWidth = 2; g.setLineDash([8, 6]);
       g.strokeRect(box.x - box.w / 2, box.y - box.h / 2, box.w, box.h); g.restore();
     } else if (gh.kind === 'shape') {

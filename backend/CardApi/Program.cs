@@ -158,7 +158,10 @@ bool ValidShape(CardShape sh)
         && (sh.Kind != "text" || (
             (sh.Text ?? "").Trim().Length is > 0 and <= 200 && !ProfanityFilter.Contains(sh.Text!)
             && System.Text.RegularExpressions.Regex.IsMatch(sh.Family ?? "", "^[A-Za-z0-9 ,'\"-]{1,120}$")
-            && Num(sh.Size, 8, 2000)));
+            && Num(sh.Size, 8, 2000)
+            && (sh.Align is null or "" or "left" or "center" or "right" or "justify")
+            && (sh.List is null or "" or "none" or "bullet" or "number")
+            && Num(sh.LetterSpacing, -0.1, 1) && Num(sh.LineSpacing, 0.7, 4)));
 }
 
 IResult? Validate(DesignRequest r)

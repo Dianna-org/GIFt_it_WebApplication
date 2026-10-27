@@ -1,5 +1,7 @@
 import { create } from 'zustand';
-import { DEFAULT_BG, DRAW_TOOLS, FONTS, TAPE_PATTERNS } from './config.js';
+import { DEFAULT_BG, DRAW_TOOLS, TAPE_PATTERNS } from './config.js';
+import { ALL_FONTS, loadFont } from './ui/fonts.js';
+import { TEXT_DEFAULTS } from './engine/shapeLibrary.js';
 import { CardPaper } from './engine/paper.js';
 
 const read = (key, fallback) => {
@@ -77,7 +79,8 @@ export const useStore = create((set, get) => ({
   stickerId: 'star',
   stickerSize: 220,
   stickerRot: 0,
-  textSpec: { text: 'Happy Birthday!', family: FONTS[0].family, size: 120, color: '#e63946', bold: false, italic: false },
+  // the next text to place (round 38: + alignment, underline, strikethrough, list, letter and line spacing)
+  textSpec: { text: 'Happy Birthday!', family: ALL_FONTS.find((f) => f.label === 'Pacifico')?.family || ALL_FONTS[0].family, size: 120, color: '#e63946', bold: false, italic: false, ...TEXT_DEFAULTS },
 
   // ui
   menuOpen: false,
@@ -221,6 +224,8 @@ export const useStore = create((set, get) => ({
   async openDesign(d) {
     const paper = newPaper(d.cardSize);
     await paper.load(d);
+    // the fonts of its text boxes may not be downloaded yet: redraw the card once they are
+    for (const f of new Set((d.shapes || []).filter((x) => x.kind === 'text').map((x) => x.family))) loadFont(f, () => paper.emit());
     set({ cardSize: d.cardSize, paper, designId: d.id, title: d.title || '', bg: isHex(d.background) ? d.background : get().bg, myColors: normalizePalette(d.palette), angles: { v: 0, l: 0, d: 0 }, cardHeld: false, dirtySinceSave: false });
   },
 

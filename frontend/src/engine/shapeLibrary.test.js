@@ -102,3 +102,28 @@ describe('text boxes', () => {
     expect(c).toMatchObject({ kind: 'text', text: 'Hi', family: 'Georgia, serif', size: 8, bold: true, italic: false, color: '#112233' });
   });
 });
+
+describe('text box formatting (round 38)', () => {
+  const measure = (t) => t.length * 10;
+  it('bullets and numbers start each typed line, wrapped lines are indented under the text', () => {
+    const l = textLayout({ text: 'Cake\n\nBalloons and presents', w: 180, size: 20, list: 'number' }, measure);
+    expect(l.lines.map((x) => x.prefix)).toEqual(['1.  ', '', '2.  ', '']);
+    expect(l.lines[3].indent).toBe(l.lines[2].indent); // hanging indent
+    expect(l.lines[3].text).toBe('presents');
+    expect(textLayout({ text: 'a\nb', w: 500, size: 20, list: 'bullet' }, measure).lines.map((x) => x.prefix)).toEqual(['•  ', '•  ']);
+  });
+  it('line spacing changes the height a text needs', () => {
+    const one = textLayout({ text: 'a\nb', w: 500, size: 20, lineSpacing: 1 }, measure).needH;
+    const two = textLayout({ text: 'a\nb', w: 500, size: 20, lineSpacing: 2 }, measure).needH;
+    expect(two - one).toBeCloseTo(40);
+  });
+  it('reports the widest line (for the first size of a new text box)', () => {
+    expect(textLayout({ text: 'Hi\nHello there', w: 1e6, size: 20 }, measure).maxW).toBe(110);
+  });
+  it('old text boxes get the default formatting; bad values are cleaned', () => {
+    const c = cleanShape({ kind: 'text', text: 'Hi', w: 100, h: 40 });
+    expect(c).toMatchObject({ align: 'center', underline: false, strike: false, list: 'none', letterSpacing: 0, lineSpacing: 1.2 });
+    const d = cleanShape({ kind: 'text', text: 'Hi', align: 'diagonal', list: 'stars', letterSpacing: 9, lineSpacing: 0.1, underline: 1, strike: 'yes' });
+    expect(d).toMatchObject({ align: 'center', list: 'none', letterSpacing: 1, lineSpacing: 0.7, underline: true, strike: true });
+  });
+});

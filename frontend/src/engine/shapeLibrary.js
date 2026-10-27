@@ -320,12 +320,25 @@ export function cleanShape(s) {
   return {
     ...base, text: String(s.text ?? '').slice(0, 200), family: String(s.family || 'Arial, sans-serif').slice(0, 120),
     size: Math.min(2000, Math.max(8, num(s.size, 120))), bold: !!s.bold, italic: !!s.italic,
+    // round 38 formatting (old text boxes get the defaults)
+    align: TEXT_ALIGNS.includes(s.align) ? s.align : TEXT_DEFAULTS.align,
+    underline: !!s.underline, strike: !!s.strike,
+    list: TEXT_LISTS.includes(s.list) ? s.list : 'none',
+    letterSpacing: Math.min(1, Math.max(-0.1, num(s.letterSpacing, 0))),
+    lineSpacing: +s.lineSpacing > 0 ? Math.min(4, Math.max(0.7, +s.lineSpacing)) : TEXT_DEFAULTS.lineSpacing,
   };
 }
 
 // ---------- text boxes ----------
 export const TEXT_PAD = 6;
-export const textLineHeight = (size) => size * 1.2;
+/** Text box formatting (round 38), with the defaults old saved text boxes get. */
+export const TEXT_DEFAULTS = { align: 'center', underline: false, strike: false, list: 'none', letterSpacing: 0, lineSpacing: 1.2 };
+export const TEXT_ALIGNS = ['left', 'center', 'right', 'justify'];
+export const TEXT_LISTS = ['none', 'bullet', 'number'];
+/** Line height: lineSpacing x the font size (1.2 = normal, like Word's "single"). */
+export const textLineHeight = (size, lineSpacing = 1.2) => size * lineSpacing;
+/** What starts a list item: a bullet, or the item's number. */
+export const listPrefix = (list, n) => (list === 'bullet' ? '•  ' : list === 'number' ? `${n}.  ` : '');
 /**
  * Word wrap like Word: lines no wider than maxW (measured with `measure(str)` -> px), new lines kept,
  * a single word longer than the line is broken up.
@@ -350,8 +363,29 @@ export function wrapText(text, maxW, measure) {
   }
   return out;
 }
-/** Lines of a text box and the height they need (the box is at least that tall). */
+/**
+ * Lines of a text box and the height they need (the box is at least that tall). Each paragraph (a line you
+ * typed) of a list starts with a bullet or its number; its wrapped lines are indented under the text
+ * (a hanging indent, like Word). Empty paragraphs get no bullet / number.
+ * -> { lines: [{ text, prefix, indent, width, last }], lineH, needH, maxW }  (measure must use the box's
+ * font and letter spacing)
+ */
 export function textLayout(t, measure) {
-  const lines = wrapText(t.text, Math.max(1, t.w - TEXT_PAD * 2), measure);
-  return { lines, lineH: textLineHeight(t.size), needH: lines.length * textLineHeight(t.size) + TEXT_PAD * 2 };
+  const avail = Math.max(1, t.w - TEXT_PAD * 2);
+  const list = TEXT_LISTS.includes(t.list) ? t.list : 'none';
+  const lines = [];
+  let n = 0, maxW = 0;
+  for (const para of String(t.text).split('\n')) {
+    const empty = !para.trim();
+    const prefix = list !== 'none' && !empty ? listPrefix(list, ++n) : '';
+    const indent = prefix ? measure(prefix) : 0;
+    const wrapped = empty ? [''] : wrapText(para, Math.max(1, avail - indent), measure);
+    wrapped.forEach((text, i) => {
+      const width = text ? measure(text) : 0;
+      lines.push({ text, prefix: i === 0 ? prefix : '', indent, width, last: i === wrapped.length - 1 });
+      maxW = Math.max(maxW, indent + width);
+    });
+  }
+  const lineH = textLineHeight(t.size, t.lineSpacing ?? TEXT_DEFAULTS.lineSpacing);
+  return { lines, lineH, needH: lines.length * lineH + TEXT_PAD * 2, maxW };
 }

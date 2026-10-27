@@ -59,6 +59,13 @@ public class CardShape
     public double Size { get; set; }
     public bool Bold { get; set; }
     public bool Italic { get; set; }
+    // text box formatting (round 38)
+    public string? Align { get; set; }
+    public bool Underline { get; set; }
+    public bool Strike { get; set; }
+    public string? List { get; set; }
+    public double LetterSpacing { get; set; }
+    public double LineSpacing { get; set; } = 1.2;
 }
 
 public record RegisterRequest(string Email, string DisplayName, string Password, DateTime BirthDate);

@@ -1,6 +1,8 @@
 import { useEffect, useLayoutEffect, useRef, useState } from 'react';
+import { createPortal } from 'react-dom';
 import { useStore } from '../store.js';
-import { CARD_SIZES, DRAW_TOOLS, FONTS, PASTELS, TAPE_PATTERNS, TOOL_LABELS } from '../config.js';
+import { CARD_SIZES, DRAW_TOOLS, PASTELS, TAPE_PATTERNS, TOOL_LABELS } from '../config.js';
+import { ALL_FONTS, FONT_GROUPS, loadFont } from './fonts.js';
 import { STICKERS, stickerCanvas } from '../engine/stickers.js';
 import { PATTERNS } from '../engine/patterns.js';
 import { renderStroke } from '../engine/brushes.js';
@@ -150,6 +152,80 @@ function ShapeButton({ def }) {
   );
 }
 
+/**
+ * Font list (round 39). The browser's own drop-down closed by itself the first time it was opened: showing
+ * every font name in its own font made the browser download all the fonts, and when they arrived it closed
+ * its drop-down. This list is part of the page, so it stays open; each font is shown in its own style.
+ * A hidden <select> keeps the keyboard's A/D font stepping (ui/keys.js, kind "select") working.
+ */
+function FontPicker({ value, onChange }) {
+  const [open, setOpen] = useState(false);
+  const [place, setPlace] = useState(null); // where the list goes on the screen (above the button, or below)
+  const ref = useRef();
+  const list = useRef();
+  const cur = ALL_FONTS.find((f) => f.family === value);
+  useLayoutEffect(() => {
+    if (!open) return;
+    // the list is put on top of the page (the tool panel scrolls and would cut it off)
+    const r = ref.current.getBoundingClientRect();
+    const above = r.top > window.innerHeight - r.bottom;
+    const room = (above ? r.top : window.innerHeight - r.bottom) - 16;
+    setPlace({ left: r.left, width: r.width, maxHeight: Math.max(160, Math.min(380, room)), ...(above ? { bottom: window.innerHeight - r.top + 4 } : { top: r.bottom + 4 }) });
+  }, [open]);
+  useEffect(() => {
+    if (!open || !place) return undefined;
+    list.current?.querySelector('.on')?.scrollIntoView({ block: 'center' });
+    const away = (e) => { if (!ref.current?.contains(e.target) && !list.current?.contains(e.target)) setOpen(false); };
+    const key = (e) => { if (e.key === 'Escape') { e.stopImmediatePropagation(); setOpen(false); } };
+    window.addEventListener('pointerdown', away);
+    window.addEventListener('keydown', key, true);
+    return () => { window.removeEventListener('pointerdown', away); window.removeEventListener('keydown', key, true); };
+  }, [open, place]);
+  const pick = (family) => { onChange(family); setOpen(false); };
+  return (
+    <div className="font-picker" ref={ref} data-kbd="select">
+      <select className="kbd-only" tabIndex={-1} aria-hidden="true" value={value} onChange={(e) => onChange(e.target.value)}>
+        {!cur && <option value={value}>Font</option>}
+        {ALL_FONTS.map((f) => <option key={f.label} value={f.family}>{f.label}</option>)}
+      </select>
+      <button type="button" className="font-current" onClick={() => setOpen(!open)} aria-haspopup="listbox" aria-expanded={open} title={`Font – ${ALL_FONTS.length} to choose from`}>
+        <span style={{ fontFamily: value }}>{cur ? cur.label : 'Font'}</span>
+        <span className="font-caret" aria-hidden="true">▾</span>
+      </button>
+      {open && place && createPortal(
+        <div className="font-list" role="listbox" aria-label="Fonts" ref={list} style={place}>
+          {FONT_GROUPS.map((g) => (
+            <div key={g.group} role="group" aria-label={g.group}>
+              <div className="font-group">{g.group}</div>
+              {g.fonts.map((f) => (
+                <button key={f.label} type="button" role="option" aria-selected={f.family === value}
+                  className={'font-opt' + (f.family === value ? ' on' : '')} style={{ fontFamily: f.family }} onClick={() => pick(f.family)}>
+                  {f.label}
+                </button>
+              ))}
+            </div>
+          ))}
+        </div>,
+        document.body,
+      )}
+    </div>
+  );
+}
+
+/** Little Word-style alignment icons (lines of text). */
+function AlignIcon({ kind }) {
+  const rows = [16, 11, 16, 9];
+  return (
+    <svg width="18" height="14" viewBox="0 0 18 14" aria-hidden="true">
+      {rows.map((w, i) => {
+        const len = kind === 'justify' ? (i === 3 ? 9 : 16) : w;
+        const x = kind === 'right' ? 17 - len : kind === 'center' ? (18 - len) / 2 : 1;
+        return <rect key={i} x={x} y={1 + i * 3.4} width={len} height="1.8" rx="0.9" fill="currentColor" />;
+      })}
+    </svg>
+  );
+}
+
 let lastStyleEdit = { id: null, t: 0 };
 /** Change the selected shape / text box; quick changes in a row (typing, a slider drag) are one undo step. */
 function editSelected(patch) {
@@ -178,21 +254,41 @@ function TextOptions() {
       if (!patch.text.trim()) { showToast('A text box needs some words – use “🗑 Delete text” to remove it.', 'error'); return; }
       if (containsProfanity(patch.text)) { showToast('That text contains words that are not allowed on cards.', 'error'); return; }
     }
+    // a placed box grows / shrinks with its letters (like dragging a corner handle)
+    if ('size' in patch && patch.size > 0) { const k = patch.size / sel.size; patch = { ...patch, w: sel.w * k, h: sel.h * k }; }
     editSelected(patch);
   };
   const remove = () => { if (paper.deleteShape(paper.selected.face, sel.id)) useStore.getState().markDirty(); };
+  // a font is downloaded the first time it is used: redraw the card (and the preview) once it is there
+  useEffect(() => { loadFont(v.family, () => useStore.getState().paper.emit()); }, [v.family]);
+  const align = v.align || 'center', list = v.list || 'none';
   return (
     <>
-      <textarea rows={2} maxLength={200} value={v.text} placeholder="Type your message…" onChange={(e) => set({ text: e.target.value })} />
-      <div className="row">
-        <select data-kbd="select" value={v.family} onChange={(e) => set({ family: e.target.value })} style={{ fontFamily: v.family }}>
-          {!FONTS.some((f) => f.family === v.family) && <option value={v.family}>Font</option>}
-          {FONTS.map((f) => <option key={f.label} value={f.family} style={{ fontFamily: f.family }}>{f.label}</option>)}
-        </select>
-        <button className={'chip' + (v.bold ? ' on' : '')} onClick={() => set({ bold: !v.bold })}><b>B</b></button>
-        <button className={'chip' + (v.italic ? ' on' : '')} onClick={() => set({ italic: !v.italic })}><i>I</i></button>
+      <textarea rows={2} maxLength={200} value={v.text} placeholder="Type your message… (Enter = a new line / a new bullet)" onChange={(e) => set({ text: e.target.value })} />
+      <FontPicker value={v.family} onChange={(family) => set({ family })} />
+      <div className="row text-format">
+        <span className="fmt-group">
+          <button className={'chip' + (v.bold ? ' on' : '')} onClick={() => set({ bold: !v.bold })} title="Bold"><b>B</b></button>
+          <button className={'chip' + (v.italic ? ' on' : '')} onClick={() => set({ italic: !v.italic })} title="Italic"><i>I</i></button>
+          <button className={'chip' + (v.underline ? ' on' : '')} onClick={() => set({ underline: !v.underline })} title="Underline"><u>U</u></button>
+          <button className={'chip' + (v.strike ? ' on' : '')} onClick={() => set({ strike: !v.strike })} title="Strikethrough (crossed out)"><s>S</s></button>
+        </span>
+        <span className="fmt-group" data-kbd="choice" role="group" aria-label="Alignment">
+          {[['left', 'Align left'], ['center', 'Center'], ['right', 'Align right'], ['justify', 'Justify (both sides straight)']].map(([a, t]) => (
+            <button key={a} className={'chip align-btn' + (align === a ? ' on' : '')} onClick={() => set({ align: a })} title={t} aria-label={t}><AlignIcon kind={a} /></button>
+          ))}
+        </span>
+        <span className="fmt-group" data-kbd="choice" role="group" aria-label="List">
+          <button className={'chip' + (list === 'none' ? ' on' : '')} onClick={() => set({ list: 'none' })} title="No list">¶</button>
+          <button className={'chip' + (list === 'bullet' ? ' on' : '')} onClick={() => set({ list: 'bullet' })} title="Bullets – every line you type gets a •">• ≡</button>
+          <button className={'chip' + (list === 'number' ? ' on' : '')} onClick={() => set({ list: 'number' })} title="Numbering – every line you type gets a number">1. ≡</button>
+        </span>
       </div>
-      <Slider label="Text size" value={v.size} min={20} max={Math.max(400, Math.round(v.size))} onChange={(n) => set({ size: n })} />
+      <Slider label="Text size" value={v.size} min={Math.min(20, Math.round(v.size))} max={Math.max(400, Math.round(v.size))} onChange={(n) => set({ size: n })} />
+      <div className="grid3 two">
+        <Slider label="Letter spacing" value={Math.round((v.letterSpacing || 0) * 100)} min={-10} max={100} suffix="%" onChange={(n) => set({ letterSpacing: n / 100 })} hint="0% = normal" />
+        <Slider label="Line spacing" value={Math.round((v.lineSpacing || 1.2) * 100)} min={70} max={300} suffix="%" onChange={(n) => set({ lineSpacing: n / 100 })} hint="120% = normal (single)" />
+      </div>
       {sel ? (
         <>
           <p className="muted"><b>Text box selected:</b> drag it to move it · corner handles make the letters bigger or smaller · side handles make the box wider or narrower (the words wrap) · top/bottom handles make it taller · the round handle rotates it. The words, font, size and colour above change it too.</p>
