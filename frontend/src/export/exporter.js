@@ -28,9 +28,14 @@ export function downloadBlob(blob, name) {
   setTimeout(() => URL.revokeObjectURL(a.href), 2000);
 }
 
-export function savePicture(layout, paper, bg, name, side = 'inside') {
+/** The picture as a PNG blob (round 46: also used to send the card to someone). */
+export function pictureBlob(layout, paper, bg, side = 'inside') {
   const c = renderPicture(layout, paper, bg, side);
-  return new Promise((res) => c.toBlob((b) => { downloadBlob(b, `${name}.png`); res(); }, 'image/png'));
+  return new Promise((res, rej) => c.toBlob((b) => (b ? res(b) : rej(new Error('no picture'))), 'image/png'));
+}
+
+export async function savePicture(layout, paper, bg, name, side = 'inside') {
+  downloadBlob(await pictureBlob(layout, paper, bg, side), `${name}.png`);
 }
 
 /** Renders every frame and encodes an endlessly looping GIF. onProgress gets 0..1. */

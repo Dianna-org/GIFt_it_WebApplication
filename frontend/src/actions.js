@@ -55,18 +55,19 @@ export async function saveDesign() {
  * Round 42: gift points come from saving the card to your computer (picture or GIF) – 50 the first time a
  * decorated card is downloaded; the server makes sure each card pays only once. Returns the toast text.
  */
-export async function rewardDownload(kind) {
+export async function rewardDownload(kind, done = 'Saved to your computer') {
+  // round 46: making the card to send it to someone earns the same points (done = 'Your card is ready to send')
   const s = st();
-  if (!s.user) return 'Saved to your computer. Log in to earn gift points for your cards.';
-  if (s.trial) return 'Saved to your computer.';
-  if (!s.paper.isDecorated()) return 'Saved to your computer.';
+  if (!s.user) return `${done}. Log in to earn gift points for your cards.`;
+  if (s.trial) return `${done}.`;
+  if (!s.paper.isDecorated()) return `${done}.`;
   try {
     const r = await api.downloadPoints(s.paper.cardKey, kind);
     if (r.user && st().token === s.token) st().setSession(r.user, s.token);
-    if (r.pointsEarned > 0) return `Saved to your computer! 🎁 +${r.pointsEarned} gift points – you have ${r.points} now. Spend them in the gift shop.`;
-    if (r.why === 'limit') return 'Saved to your computer. (You have earned all the gift points you can for today – more tomorrow!)';
-  } catch { /* points are a bonus: the file is saved anyway */ }
-  return 'Saved to your computer.';
+    if (r.pointsEarned > 0) return `${done}! 🎁 +${r.pointsEarned} gift points – you have ${r.points} now. Spend them in the gift shop.`;
+    if (r.why === 'limit') return `${done}. (You have earned all the gift points you can for today – more tomorrow!)`;
+  } catch { /* points are a bonus: the file is made anyway */ }
+  return `${done}.`;
 }
 
 export async function confirmDiscard(message = 'You have unsaved changes. Discard them?') {

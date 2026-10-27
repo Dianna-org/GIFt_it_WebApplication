@@ -31,6 +31,14 @@ else
         throw new InvalidOperationException("Security:PasswordPepper must be a random secret of at least 32 characters (see .env.example).");
 }
 const string TokenIssuer = "giftit-api", TokenAudience = "giftit-web";
+// Round 46: emails (Mailpit test inbox by default, Gmail etc. from .env) and the app's public address for links
+var smtp = new SmtpSettings(
+    builder.Configuration["Smtp:Host"] ?? "localhost", int.TryParse(builder.Configuration["Smtp:Port"], out var smtpPort) ? smtpPort : 1025,
+    builder.Configuration["Smtp:User"] ?? "", builder.Configuration["Smtp:Password"] ?? "",
+    string.IsNullOrWhiteSpace(builder.Configuration["Smtp:From"]) ? "GIFt it! <no-reply@giftit.local>" : builder.Configuration["Smtp:From"]!);
+var publicUrl = (builder.Configuration["App:PublicUrl"] ?? corsOrigins[0]).TrimEnd('/');
+// the sign-up codes are hashed with a key made from the pepper (a different key than the passwords use)
+var codeKey = System.Security.Cryptography.SHA256.HashData(Encoding.UTF8.GetBytes(pepper + "|email-codes"));
 
 builder.WebHost.ConfigureKestrel(o => o.Limits.MaxRequestBodySize = 25 * 1024 * 1024);
 
@@ -39,6 +47,10 @@ builder.Services.AddSingleton(sp => sp.GetRequiredService<IMongoClient>().GetDat
 builder.Services.AddSingleton(sp => sp.GetRequiredService<IMongoDatabase>().GetCollection<User>("users"));
 builder.Services.AddSingleton(sp => sp.GetRequiredService<IMongoDatabase>().GetCollection<Design>("designs"));
 builder.Services.AddSingleton(new PasswordSecurity(pepper));
+builder.Services.AddSingleton(smtp);
+builder.Services.AddSingleton<Mailer>();
+builder.Services.AddSingleton(sp => sp.GetRequiredService<IMongoDatabase>().GetCollection<PendingSignup>("pendingSignups"));
+builder.Services.AddSingleton(sp => sp.GetRequiredService<IMongoDatabase>().GetCollection<Share>("shares"));
 
 builder.Services.AddAuthentication(JwtBearerDefaults.AuthenticationScheme)
     .AddJwtBearer(o =>
@@ -62,6 +74,9 @@ builder.Services.AddRateLimiter(o =>
     o.AddPolicy("auth", ctx => RateLimitPartition.GetFixedWindowLimiter(
         ctx.Connection.RemoteIpAddress?.ToString() ?? "anon",
         _ => new FixedWindowRateLimiterOptions { PermitLimit = 20, Window = TimeSpan.FromMinutes(1) }));
+    o.AddPolicy("code", ctx => RateLimitPartition.GetFixedWindowLimiter(
+        ctx.Connection.RemoteIpAddress?.ToString() ?? "anon",
+        _ => new FixedWindowRateLimiterOptions { PermitLimit = 15, Window = TimeSpan.FromMinutes(1) }));
 });
 
 var app = builder.Build();
@@ -85,6 +100,8 @@ app.Use(async (ctx, next) =>
 {
     var users = app.Services.GetRequiredService<IMongoCollection<User>>();
     var designs = app.Services.GetRequiredService<IMongoCollection<Design>>();
+    var pendingIx = app.Services.GetRequiredService<IMongoCollection<PendingSignup>>();
+    var sharesIx = app.Services.GetRequiredService<IMongoCollection<Share>>();
     _ = Task.Run(async () =>
     {
         for (var attempt = 0; attempt < 30; attempt++)
@@ -95,6 +112,13 @@ app.Use(async (ctx, next) =>
                     Builders<User>.IndexKeys.Ascending(u => u.Email), new CreateIndexOptions { Unique = true }));
                 await designs.Indexes.CreateOneAsync(new CreateIndexModel<Design>(
                     Builders<Design>.IndexKeys.Ascending(d => d.UserId)));
+                // round 46: MongoDB removes unfinished sign-ups and old share links by itself
+                await pendingIx.Indexes.CreateOneAsync(new CreateIndexModel<PendingSignup>(
+                    Builders<PendingSignup>.IndexKeys.Ascending(x => x.ExpiresAt), new CreateIndexOptions { ExpireAfter = TimeSpan.Zero }));
+                await sharesIx.Indexes.CreateOneAsync(new CreateIndexModel<Share>(
+                    Builders<Share>.IndexKeys.Ascending(x => x.ExpiresAt), new CreateIndexOptions { ExpireAfter = TimeSpan.Zero }));
+                await sharesIx.Indexes.CreateOneAsync(new CreateIndexModel<Share>(
+                    Builders<Share>.IndexKeys.Ascending(x => x.UserId).Descending(x => x.CreatedAt)));
                 return;
             }
             catch { await Task.Delay(2000); }
@@ -165,8 +189,12 @@ const int MaxAvatarChars = 300_000; // a 256 px JPEG is ~20-60 KB; this leaves p
 app.MapGet("/api/health", () => Results.Ok(new { status = "ok" }));
 
 var auth = app.MapGroup("/api/auth").RequireRateLimiting("auth");
+// round 46: typing the emailed code has its own per-IP limit (each code also allows only 5 tries)
+var codes = app.MapGroup("/api/auth").RequireRateLimiting("code");
 
-auth.MapPost("/register", async (RegisterRequest r, IMongoCollection<User> users, PasswordSecurity passwords) =>
+// Round 46: creating an account has two steps. /register checks the details and emails a 6-digit code; the
+// account is only made by /verify, with the right code (so the email address surely belongs to the user).
+auth.MapPost("/register", async (RegisterRequest r, IMongoCollection<User> users, IMongoCollection<PendingSignup> pending, PasswordSecurity passwords, Mailer mailer, ILogger<Program> log) =>
 {
     var email = (r.Email ?? "").Trim().ToLowerInvariant();
     var name = (r.DisplayName ?? "").Trim();
@@ -185,11 +213,81 @@ auth.MapPost("/register", async (RegisterRequest r, IMongoCollection<User> users
     if (await users.Find(u => u.Email == email).AnyAsync())
         return Results.Conflict(new { error = "An account with this email already exists." });
 
-    var user = new User { Email = email, DisplayName = name, BirthDate = r.BirthDate.Date, Points = GiftShop.WelcomePoints, ShopStarted = true, LastActiveAt = DateTime.UtcNow };
-    user.PasswordHash = passwords.Hash(r.Password!); // Argon2id + its own random salt + the pepper (round 44)
+    var now = DateTime.UtcNow;
+    var old = await pending.Find(x => x.Email == email).FirstOrDefaultAsync();
+    if (old is not null && now - old.SentAt < VerificationCode.ResendAfter)
+        return Results.Json(new { error = "We just sent a code to this address – please wait a minute before asking for a new one." }, statusCode: 429);
+    var code = VerificationCode.New();
+    var p = new PendingSignup
+    {
+        Email = email, DisplayName = name, BirthDate = r.BirthDate.Date,
+        PasswordHash = passwords.Hash(r.Password!), // Argon2id + its own random salt + the pepper (round 44)
+        CodeHash = VerificationCode.Hash(email, code, codeKey), Sends = 1, SentAt = now, ExpiresAt = now + VerificationCode.ValidFor,
+    };
+    var (subject, html, text) = EmailTexts.Code(name, code);
+    try { await mailer.SendAsync(email, subject, html, text); }
+    catch (Exception ex)
+    {
+        log.LogWarning(ex, "Sign-up code email failed");
+        return Results.Json(new { error = "We couldn't send the email with your code. Please check the address or try again later." }, statusCode: 503);
+    }
+    await pending.ReplaceOneAsync(x => x.Email == email, p, new ReplaceOptions { IsUpsert = true });
+    return Results.Ok(new { pending = true, email, minutes = (int)VerificationCode.ValidFor.TotalMinutes, digits = VerificationCode.Digits });
+});
+
+// Round 46: the code from the email -> the account is created, logged in, and a confirmation email is sent.
+codes.MapPost("/verify", async (VerifyRequest r, IMongoCollection<User> users, IMongoCollection<PendingSignup> pending, Mailer mailer, ILogger<Program> log) =>
+{
+    var email = (r.Email ?? "").Trim().ToLowerInvariant();
+    var now = DateTime.UtcNow;
+    var p = await pending.Find(x => x.Email == email).FirstOrDefaultAsync();
+    if (p is null || p.ExpiresAt < now)
+        return Results.BadRequest(new { error = "This code has run out. Please go back and send a new one.", expired = true });
+    if (p.Tries >= VerificationCode.MaxTries)
+        return Results.BadRequest(new { error = "Too many wrong codes. Please send a new one.", expired = true });
+    if (!VerificationCode.Matches(p.CodeHash, email, r.Code ?? "", codeKey))
+    {
+        await pending.UpdateOneAsync(x => x.Email == email, Builders<PendingSignup>.Update.Inc(x => x.Tries, 1));
+        var left = VerificationCode.MaxTries - p.Tries - 1;
+        return Results.BadRequest(new { error = left > 0 ? $"That code isn't right. {left} {(left == 1 ? "try" : "tries")} left." : "That code isn't right. Please send a new one.", expired = left <= 0 });
+    }
+    // used once: whoever removes it first creates the account
+    if (await pending.FindOneAndDeleteAsync(x => x.Email == email && x.CodeHash == p.CodeHash) is null)
+        return Results.BadRequest(new { error = "This code was already used.", expired = true });
+    var user = new User
+    {
+        Email = email, DisplayName = p.DisplayName, BirthDate = p.BirthDate, PasswordHash = p.PasswordHash,
+        Points = GiftShop.WelcomePoints, ShopStarted = true, LastActiveAt = now, EmailVerified = true, EmailVerifiedAt = now, CreatedAt = now,
+    };
     try { await users.InsertOneAsync(user); }
     catch (MongoWriteException) { return Results.Conflict(new { error = "An account with this email already exists." }); }
+    var (subject, html, text) = EmailTexts.Welcome(user, publicUrl);
+    _ = Task.Run(async () =>
+    {
+        try { await mailer.SendAsync(email, subject, html, text); }
+        catch (Exception ex) { log.LogWarning(ex, "Welcome email failed"); } // the account works anyway
+    });
     return Results.Ok(new { token = CreateToken(user), user = UserDto(user) });
+});
+
+// Round 46: "Send a new code" (at most once a minute and VerificationCode.MaxSends times).
+codes.MapPost("/resend", async (ResendRequest r, IMongoCollection<PendingSignup> pending, Mailer mailer, ILogger<Program> log) =>
+{
+    var email = (r.Email ?? "").Trim().ToLowerInvariant();
+    var now = DateTime.UtcNow;
+    var p = await pending.Find(x => x.Email == email).FirstOrDefaultAsync();
+    if (p is null || p.ExpiresAt < now) return Results.BadRequest(new { error = "Please go back and create the account again – it waited too long.", expired = true });
+    if (now - p.SentAt < VerificationCode.ResendAfter)
+        return Results.Json(new { error = $"Please wait {Math.Ceiling((VerificationCode.ResendAfter - (now - p.SentAt)).TotalSeconds)} seconds before asking for a new code." }, statusCode: 429);
+    if (p.Sends >= VerificationCode.MaxSends) return Results.Json(new { error = "That's enough codes for now. Please try again later." }, statusCode: 429);
+    var code = VerificationCode.New();
+    var (subject, html, text) = EmailTexts.Code(p.DisplayName, code);
+    try { await mailer.SendAsync(email, subject, html, text); }
+    catch (Exception ex) { log.LogWarning(ex, "Sign-up code email failed"); return Results.Json(new { error = "We couldn't send the email. Please try again later." }, statusCode: 503); }
+    await pending.UpdateOneAsync(x => x.Email == email, Builders<PendingSignup>.Update
+        .Set(x => x.CodeHash, VerificationCode.Hash(email, code, codeKey)).Set(x => x.Tries, 0).Inc(x => x.Sends, 1)
+        .Set(x => x.SentAt, now).Set(x => x.ExpiresAt, now + VerificationCode.ValidFor));
+    return Results.Ok(new { sent = true, minutes = (int)VerificationCode.ValidFor.TotalMinutes });
 });
 
 auth.MapPost("/login", async (LoginRequest r, IMongoCollection<User> users, PasswordSecurity passwords) =>
@@ -300,6 +398,94 @@ app.MapPut("/api/account/avatar", async (AvatarRequest r, ClaimsPrincipal p, IMo
     var user = await users.FindOneAndUpdateAsync(u => u.Id == uid, Builders<User>.Update.Set(u => u.Avatar, avatar),
         new FindOneAndUpdateOptions<User> { ReturnDocument = ReturnDocument.After });
     return user is null ? Results.NotFound() : Results.Ok(new { user = UserDto(user) });
+}).RequireAuthorization();
+
+// ---------------------------------------------------------------- sending a card to someone (round 46)
+// A finished picture or GIF gets a public link (/s/<id>, kept ShareRules.KeepFor) that can go into WhatsApp,
+// Facebook, Discord, Instagram, Gmail…; it can also be emailed from the app with the card attached.
+app.MapPost("/api/shares", async (ShareRequest r, ClaimsPrincipal p, IMongoCollection<User> users, IMongoCollection<Share> shares) =>
+{
+    var file = ShareRules.Decode(r.Image);
+    if (file is null) return Results.BadRequest(new { error = "Only a picture (PNG) or a GIF of the card can be sent (8 MB at most)." });
+    var title = (r.Title ?? "").Trim();
+    if (title.Length > 40 || ProfanityFilter.Contains(title)) title = "";
+    var uid = p.FindFirstValue(ClaimTypes.NameIdentifier)!;
+    var user = await users.Find(u => u.Id == uid).FirstOrDefaultAsync();
+    if (user is null) return Results.NotFound();
+    var now = DateTime.UtcNow;
+    if (await shares.CountDocumentsAsync(x => x.UserId == uid && x.CreatedAt > now.AddDays(-1)) >= ShareRules.MaxPerDay)
+        return Results.Json(new { error = $"You've made {ShareRules.MaxPerDay} links today – that's the limit. Try again tomorrow." }, statusCode: 429);
+    var s = new Share { Id = ShareRules.NewId(), UserId = uid, FromName = user.DisplayName, Title = title, ContentType = file.Value.Type, Data = file.Value.Data, CreatedAt = now, ExpiresAt = now + ShareRules.KeepFor };
+    await shares.InsertOneAsync(s);
+    return Results.Ok(new { id = s.Id, url = $"{publicUrl}/s/{s.Id}", imageUrl = $"{publicUrl}/api/shares/{s.Id}/image", expires = s.ExpiresAt });
+}).RequireAuthorization();
+
+app.MapGet("/api/shares/{id}/image", async (string id, IMongoCollection<Share> shares) =>
+{
+    if (!ShareRules.IsId(id)) return Results.NotFound();
+    var s = await shares.Find(x => x.Id == id).FirstOrDefaultAsync();
+    if (s is null || s.ExpiresAt < DateTime.UtcNow) return Results.NotFound();
+    return Results.File(s.Data, s.ContentType, $"birthday-card.{(s.ContentType == "image/gif" ? "gif" : "png")}");
+});
+
+// The page the link opens (nginx sends /s/<id> here): the card, and preview tags for WhatsApp/Facebook/Discord.
+app.MapGet("/api/shares/{id}/page", async (string id, IMongoCollection<Share> shares) =>
+{
+    var s = ShareRules.IsId(id) ? await shares.Find(x => x.Id == id).FirstOrDefaultAsync() : null;
+    string E(string v) => System.Net.WebUtility.HtmlEncode(v);
+    if (s is null || s.ExpiresAt < DateTime.UtcNow)
+        return Results.Content($"<!doctype html><meta charset=utf-8><meta name=viewport content=\"width=device-width\"><title>GIFt it!</title><body style=\"font-family:sans-serif;text-align:center;padding:40px;background:#fde68a\"><h1>This card isn't here any more</h1><p>Shared cards are kept for {ShareRules.KeepFor.Days} days.</p><p><a href=\"{E(publicUrl)}\">Make your own card with GIFt it!</a></p>", "text/html; charset=utf-8", statusCode: 404);
+    var img = $"{publicUrl}/api/shares/{s.Id}/image";
+    var title = $"{s.FromName} made you a birthday card! 🎂";
+    var html = $@"<!doctype html><html lang=en><head><meta charset=utf-8><meta name=viewport content=""width=device-width,initial-scale=1"">
+<title>{E(title)}</title><meta name=robots content=noindex>
+<meta property=og:title content=""{E(title)}""><meta property=og:description content=""Made with GIFt it! – birthday cards on a 3D desk."">
+<meta property=og:image content=""{E(img)}""><meta property=og:type content=website><meta property=og:url content=""{E($"{publicUrl}/s/{s.Id}")}"">
+<meta name=twitter:card content=summary_large_image><link rel=icon href=""/logo.jpeg"">
+<style>body{{margin:0;font-family:Nunito,Arial,sans-serif;background:#fde68a;color:#3b2f2f;text-align:center}}main{{max-width:900px;margin:0 auto;padding:24px 16px}}img.card{{max-width:100%;border-radius:16px;box-shadow:0 10px 30px rgba(60,40,0,.25)}}a.btn{{display:inline-block;margin:8px;padding:10px 18px;border-radius:999px;background:#7a1730;color:#fff;text-decoration:none;font-weight:700}}a.btn.light{{background:#fff;color:#7a1730}}</style></head>
+<body><main><img src=""/logo.jpeg"" alt=""GIFt it!"" width=96 height=96 style=""border-radius:8px""><h1>{E(title)}</h1>
+<img class=card src=""/api/shares/{s.Id}/image"" alt=""Birthday card""><p>
+<a class=""btn light"" href=""/api/shares/{s.Id}/image"" download>⬇ Save the card</a><a class=btn href=""/"">Make your own card</a></p></main></body></html>";
+    return Results.Content(html, "text/html; charset=utf-8");
+});
+
+// Email the shared card from the app (attached + shown in the email), with a short message.
+app.MapPost("/api/shares/{id}/email", async (string id, ShareEmailRequest r, ClaimsPrincipal p, IMongoCollection<User> users, IMongoCollection<Share> shares, Mailer mailer, ILogger<Program> log) =>
+{
+    var uid = p.FindFirstValue(ClaimTypes.NameIdentifier)!;
+    var s = ShareRules.IsId(id) ? await shares.Find(x => x.Id == id && x.UserId == uid).FirstOrDefaultAsync() : null;
+    if (s is null) return Results.NotFound(new { error = "Unknown card." });
+    var to = (r.To ?? "").Trim();
+    if (!ShareRules.IsEmail(to)) return Results.BadRequest(new { error = "Please enter a valid email address." });
+    var message = (r.Message ?? "").Trim();
+    if (message.Length > ShareRules.MaxMessage) return Results.BadRequest(new { error = $"The message is too long ({ShareRules.MaxMessage} characters max)." });
+    if (ProfanityFilter.Contains(message)) return Results.BadRequest(new { error = "The message contains words that aren't allowed." });
+    var now = DateTime.UtcNow;
+    // one atomic step: only while this user has emails left today (stops the app being used to send spam)
+    var before = await users.Find(u => u.Id == uid).FirstOrDefaultAsync();
+    var sentToday = before?.EmailSendTimes.Count(t => t > now.AddDays(-1)) ?? ShareRules.MaxEmailsPerDay;
+    var count = before?.EmailSendTimes.Count ?? 0;
+    var user = sentToday >= ShareRules.MaxEmailsPerDay ? null : await users.FindOneAndUpdateAsync(
+        u => u.Id == uid && u.EmailSendTimes.Count == count, // nothing sent meanwhile
+        Builders<User>.Update.Push(u => u.EmailSendTimes, now));
+    if (user is null) return Results.Json(new { error = $"You've sent {ShareRules.MaxEmailsPerDay} cards by email today – that's the limit. Try again tomorrow." }, statusCode: 429);
+    var ext = s.ContentType == "image/gif" ? "gif" : "png";
+    var (subject, html, text) = EmailTexts.Card(user.DisplayName, message, $"{publicUrl}/s/{s.Id}", "card");
+    try
+    {
+        await mailer.SendAsync(to, subject, html, text, new[]
+        {
+            new Mailer.Attachment($"card.{ext}", s.ContentType, s.Data, Inline: true, ContentId: "card"),
+            new Mailer.Attachment($"birthday-card.{ext}", s.ContentType, s.Data),
+        });
+    }
+    catch (Exception ex)
+    {
+        log.LogWarning(ex, "Card email failed");
+        await users.UpdateOneAsync(u => u.Id == uid, Builders<User>.Update.Pull(u => u.EmailSendTimes, now));
+        return Results.Json(new { error = "We couldn't send the email. Please try again later." }, statusCode: 503);
+    }
+    return Results.Ok(new { sent = true, left = ShareRules.MaxEmailsPerDay - sentToday - 1 });
 }).RequireAuthorization();
 
 var designsApi = app.MapGroup("/api/designs").RequireAuthorization();

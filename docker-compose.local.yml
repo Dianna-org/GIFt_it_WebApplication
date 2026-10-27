@@ -5,3 +5,7 @@ services:
   mongo:
     ports:
       - "127.0.0.1:${MONGODB_PORT:-27018}:27017"
+  # round 46: the test inbox's SMTP port too, for the backend running on the host
+  mailpit:
+    ports:
+      - "127.0.0.1:${MAILPIT_SMTP_PORT:-1026}:1025"

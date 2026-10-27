@@ -400,3 +400,29 @@ body.zoom-panning, body.zoom-panning .desk canvas { cursor: grabbing !important;
 .shop-item.big .pv-photo img { object-fit: contain; }
 .shop-buy .btn, .shop-buy .price { white-space: nowrap; }
 .shop-buy { flex-wrap: wrap; }
+
+/* round 46: the "Check your email" step of creating an account */
+.code-note { margin: 0; line-height: 1.45; }
+.code-note small { display: block; color: var(--muted); margin-top: 4px; }
+.code-step .strip-input, .code-step .strip-mark .ink { letter-spacing: .35em; }
+.code-actions { justify-content: space-between; flex-wrap: wrap; gap: 8px; }
+.code-actions .link:disabled { color: var(--muted); text-decoration: none; cursor: default; }
+
+/* round 46: Download / Send to someone, and the sending panel */
+.save-send { gap: 10px; }
+.save-send .btn { flex: 1; justify-content: center; }
+.send-btn { background: #7a1730; border-color: #7a1730; }
+.send-panel { display: grid; gap: 14px; }
+.send-head { display: grid; grid-template-columns: 160px 1fr auto; gap: 14px; align-items: center; }
+.send-head img { width: 160px; border-radius: 10px; box-shadow: 0 4px 14px rgba(60, 40, 0, .2); background: #fff; }
+.send-head h3 { margin: 0 0 4px; }
+.send-head p { margin: 0; }
+.send-panel .btn.primary.wide small { font-weight: 400; opacity: .85; margin-left: 6px; }
+.send-apps { display: grid; grid-template-columns: repeat(auto-fill, minmax(130px, 1fr)); gap: 8px; }
+.send-app { justify-content: center; }
+.send-link { display: grid; gap: 8px; }
+.send-link .row { margin: 0; }
+.send-link .row .text { flex: 1; min-width: 0; }
+.send-mail { background: #fffcf4; border: 1px solid var(--line); border-radius: 12px; padding: 12px; }
+.send-panel .small { font-size: 12px; margin: 0; }
+@media (max-width: 600px) { .send-head { grid-template-columns: 96px 1fr auto; } .send-head img { width: 96px; } }

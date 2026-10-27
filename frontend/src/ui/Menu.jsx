@@ -60,9 +60,10 @@ export function Menu() {
       </section>
 
       <section>
-        <h3>Save to my computer</h3>
+        <h3>Save to my computer or send it</h3>
         <button className="btn wide" onClick={() => { useStore.getState().setPanel('export'); useStore.setState({ exportMode: 'picture' }); }}>🖼 As a picture…</button>
         <button className="btn wide" onClick={() => { useStore.getState().setPanel('export'); useStore.setState({ exportMode: 'animation' }); }}>✨ As an animation (GIF)…</button>
+        <p className="muted small-note">Both have <b>📤 Send to someone</b> too: WhatsApp, Instagram, Discord, Facebook, Gmail, a link or an email.</p>
       </section>
 
       <section>

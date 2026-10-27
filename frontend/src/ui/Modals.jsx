@@ -5,7 +5,8 @@ import { useEffect, useRef, useState } from 'react';
 import { api } from '../api.js';
 import { useStore } from '../store.js';
 import { ANIMATION_LAYOUTS, PICTURE_LAYOUTS } from '../export/layouts.js';
-import { savePicture, saveGif, GIF_SIZE } from '../export/exporter.js';
+import { savePicture, saveGif, GIF_SIZE, pictureBlob, encodeGif } from '../export/exporter.js';
+import { SendPanel } from './SendPanel.jsx';
 import { renderLayout, ANIM_SECONDS } from '../export/layouts.js';
 import { moderateArtwork, confirmDiscard, rewardDownload } from '../actions.js';
 
@@ -36,11 +37,26 @@ export function AuthModal() {
   const setPanel = useStore((s) => s.setPanel);
   const setSession = useStore((s) => s.setSession);
   const showToast = useStore((s) => s.showToast);
-  const [mode, setMode] = useState('login');
+  const [mode, setMode] = useState('login'); // 'login' | 'register' | 'code' (round 46: the emailed code)
   const [f, setF] = useState({ email: '', password: '', displayName: '', birthDate: '' });
   const [err, setErr] = useState('');
   const [busy, setBusy] = useState(false);
   const setV = (k) => (v) => setF((cur) => ({ ...cur, [k]: v }));
+  const [code, setCode] = useState('');
+  const [sentTo, setSentTo] = useState('');
+  const [wait, setWait] = useState(0); // seconds until "Send a new code" works again
+  useEffect(() => {
+    if (wait <= 0) return undefined;
+    const t = setTimeout(() => setWait((w) => w - 1), 1000);
+    return () => clearTimeout(t);
+  }, [wait]);
+
+  const welcome = (r) => {
+    setSession(r.user, r.token);
+    useStore.getState().noticeExpired(r.user);
+    showToast(`Welcome, ${r.user.displayName}!`, 'success');
+    setPanel(null);
+  };
 
   const submit = async (e) => {
     e.preventDefault();
@@ -51,15 +67,41 @@ export function AuthModal() {
     }
     setBusy(true);
     try {
-      const r = mode === 'login'
-        ? await api.login({ email: f.email, password: f.password })
-        : await api.register({ email: f.email, password: f.password, displayName: f.displayName, birthDate: f.birthDate });
-      setSession(r.user, r.token);
-      useStore.getState().noticeExpired(r.user);
-      showToast(`Welcome, ${r.user.displayName}!`, 'success');
-      setPanel(null);
+      if (mode === 'login') welcome(await api.login({ email: f.email, password: f.password }));
+      else if (mode === 'register') {
+        // round 46: the account is made only after the code from the email is typed in
+        const r = await api.register({ email: f.email, password: f.password, displayName: f.displayName, birthDate: f.birthDate });
+        setSentTo(r.email); setCode(''); setWait(60); setMode('code');
+      } else {
+        const r = await api.verify(sentTo, code);
+        welcome(r);
+        showToast(`Welcome, ${r.user.displayName}! Your account is ready – we emailed you its details.`, 'success');
+      }
     } catch (ex) { setErr(ex.message); } finally { setBusy(false); }
   };
+  const resend = async () => {
+    setErr('');
+    try { await api.resend(sentTo); setWait(60); setCode(''); showToast(`A new code is on its way to ${sentTo}.`, 'success'); }
+    catch (ex) { setErr(ex.message); }
+  };
+
+  if (mode === 'code') {
+    return (
+      <Modal title="Check your email" onClose={() => setPanel(null)}>
+        <form onSubmit={submit} className="form code-step">
+          <p className="code-note">📬 We sent a {6}-digit code to <b>{sentTo}</b>. Write it on the strip below to finish creating your account. <small>(It works for 15 minutes. Not there? Look in Spam / Promotions too.)</small></p>
+          <PaperField key="code" label="Code from the email" value={code} onChange={(v) => setCode(v.replace(/[^0-9 ]/g, '').slice(0, 7))} tilt={0.4}
+            inputProps={{ required: true, inputMode: 'numeric', autoComplete: 'one-time-code', pattern: '[0-9 ]{6,7}', autoFocus: true, title: 'The 6 digits from the email' }} />
+          {err && <p className="error" role="alert">{err}</p>}
+          <button className="btn primary wide" disabled={busy || code.replace(/\D/g, '').length !== 6}>{busy ? 'Please wait…' : 'Create my account'}</button>
+          <div className="row code-actions">
+            <button type="button" className="link" onClick={() => { setMode('register'); setErr(''); }}>← Change my details</button>
+            <button type="button" className="link" disabled={wait > 0} onClick={resend}>{wait > 0 ? `Send a new code (${wait} s)` : 'Send a new code'}</button>
+          </div>
+        </form>
+      </Modal>
+    );
+  }
 
   return (
     <Modal title={mode === 'login' ? 'Log in' : 'Create your account'} onClose={() => setPanel(null)}>
@@ -82,7 +124,7 @@ export function AuthModal() {
           </div>
         )}
         {err && <p className="error" role="alert">{err}</p>}
-        <button className="btn primary wide" disabled={busy}>{busy ? 'Please wait…' : mode === 'login' ? 'Log in' : 'Create account'}</button>
+        <button className="btn primary wide" disabled={busy}>{busy ? 'Please wait…' : mode === 'login' ? 'Log in' : 'Next: check my email'}</button>
         <button type="button" className="link" onClick={() => { setMode(mode === 'login' ? 'register' : 'login'); setErr(''); }}>
           {mode === 'login' ? 'New here? Create an account' : 'Already have an account? Log in'}
         </button>
@@ -183,6 +225,7 @@ export function ExportModal() {
   const [sel, setSel] = useState(layouts[0].id);
   const [progress, setProgress] = useState(null);
   const [side, setSide] = useState('inside');
+  const [sendFile, setSendFile] = useState(null); // round 46: the finished file, being sent to someone
   const big = useRef();
 
   useEffect(() => { setSel((mode === 'picture' ? PICTURE_LAYOUTS : ANIMATION_LAYOUTS)[0].id); }, [mode]);
@@ -224,8 +267,28 @@ export function ExportModal() {
     } catch (e) { showToast('Could not create the file: ' + e.message, 'error'); } finally { setProgress(null); }
   };
 
+  // round 46: the same file as the download, then the ways to send it (SendPanel)
+  const send = async () => {
+    setProgress(0);
+    try {
+      const mod = await moderateArtwork();
+      if (!mod.ok) { showToast(mod.reason, 'error'); return; }
+      const blob = mode === 'picture' ? await pictureBlob(sel, paper, bg, side) : await encodeGif(sel, paper, bg, setProgress, side);
+      setSendFile(new File([blob], `${name}.${mode === 'picture' ? 'png' : 'gif'}`, { type: blob.type }));
+      showToast(await rewardDownload(mode === 'picture' ? 'picture' : 'gif', 'Your card is ready to send'), 'success');
+    } catch (e) { showToast('Could not create the file: ' + e.message, 'error'); } finally { setProgress(null); }
+  };
+
+  if (sendFile) {
+    return (
+      <Modal title="Send my card to someone" onClose={() => setPanel(null)} wide>
+        <SendPanel file={sendFile} onClose={() => setSendFile(null)} />
+      </Modal>
+    );
+  }
+
   return (
-    <Modal title="Save to my computer" onClose={() => setPanel(null)} wide>
+    <Modal title="Save or send my card" onClose={() => setPanel(null)} wide>
       <div className="tabs">
         <button className={mode === 'picture' ? 'on' : ''} onClick={() => setMode('picture')}>🖼 Picture</button>
         <button className={mode === 'animation' ? 'on' : ''} onClick={() => setMode('animation')}>✨ Animation</button>
@@ -243,9 +306,14 @@ export function ExportModal() {
         <div className="preview">
           <canvas ref={big} />
           <p className="muted">The background uses your current colour. {mode === 'picture' ? 'PNG, 1600×1200.' : `Looping GIF, ${GIF_SIZE[0]}×${GIF_SIZE[1]}.`}</p>
-          <button className="btn primary wide" disabled={progress !== null} onClick={download}>
-            {progress === null ? `Download ${mode === 'picture' ? 'picture' : 'GIF'}` : mode === 'picture' ? 'Preparing…' : `Making GIF… ${Math.round(progress * 100)}%`}
-          </button>
+          {progress !== null ? (
+            <button className="btn primary wide" disabled>{mode === 'picture' ? 'Preparing…' : `Making GIF… ${Math.round(progress * 100)}%`}</button>
+          ) : (
+            <div className="row save-send">
+              <button className="btn primary" onClick={download}>⬇ Download {mode === 'picture' ? 'picture' : 'GIF'}</button>
+              <button className="btn primary send-btn" onClick={send} title="WhatsApp, Instagram, Discord, Facebook, Gmail, a link, or an email from GIFt it!">📤 Send to someone</button>
+            </div>
+          )}
         </div>
       </div>
     </Modal>

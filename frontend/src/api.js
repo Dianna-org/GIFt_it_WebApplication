@@ -27,6 +27,12 @@ async function request(path, { method = 'GET', body, auth = true } = {}) {
 export const api = {
   register: (b) => request('/auth/register', { method: 'POST', body: b, auth: false }),
   login: (b) => request('/auth/login', { method: 'POST', body: b, auth: false }),
+  // round 46: the code emailed at sign-up
+  verify: (email, code) => request('/auth/verify', { method: 'POST', body: { email, code }, auth: false }),
+  resend: (email) => request('/auth/resend', { method: 'POST', body: { email }, auth: false }),
+  // round 46: a public link to a finished picture/GIF, and emailing it from the app
+  share: (image, title) => request('/shares', { method: 'POST', body: { image, title } }),
+  emailShare: (id, to, message) => request(`/shares/${id}/email`, { method: 'POST', body: { to, message } }),
   listDesigns: () => request('/designs'),
   getDesign: (id) => request(`/designs/${id}`),
   createDesign: (b) => request('/designs', { method: 'POST', body: b }),

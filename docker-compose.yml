@@ -18,10 +18,30 @@ services:
       Mongo__Database: birthdaycards
       Jwt__Key: ${JWT_KEY:?Copy .env.example to .env first}
       Security__PasswordPepper: ${PASSWORD_PEPPER:?Run ./deploy.sh once (it adds PASSWORD_PEPPER to .env)}
+      # Round 46: emails. Default = the Mailpit test inbox below (open http://localhost:8025). For real emails
+      # set SMTP_HOST=smtp.gmail.com, SMTP_PORT=587, SMTP_USER=you@gmail.com, SMTP_PASSWORD=<App Password> in .env.
+      Smtp__Host: ${SMTP_HOST:-mailpit}
+      Smtp__Port: ${SMTP_PORT:-1025}
+      Smtp__User: ${SMTP_USER:-}
+      Smtp__Password: ${SMTP_PASSWORD:-}
+      Smtp__From: ${SMTP_FROM:-}
+      App__PublicUrl: ${PUBLIC_URL:-http://localhost:3000}
       Cors__Origins: http://localhost:3000
     depends_on:
       mongo:
         condition: service_healthy
+      mailpit:
+        condition: service_started
+
+  # Round 46: a free test inbox (catches every email the app sends; nothing reaches the real address).
+  # Web page: http://localhost:8025 (this computer only).
+  mailpit:
+    image: axllent/mailpit:v1.21
+    restart: unless-stopped
+    ports:
+      - "127.0.0.1:${MAILPIT_PORT:-8025}:8025"
+    environment:
+      MP_MAX_MESSAGES: 500
 
   web:
     build: ./frontend

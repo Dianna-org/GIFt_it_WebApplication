@@ -41,7 +41,7 @@ done
 # Start MongoDB from docker compose (only the database container, reachable on localhost), if Docker is running
 if docker info > /dev/null 2>&1; then
     echo "Starting MongoDB container (localhost:${MONGODB_PORT})..."
-    docker compose -f docker-compose.yml -f docker-compose.local.yml up -d mongo
+    docker compose -f docker-compose.yml -f docker-compose.local.yml up -d mongo mailpit
 else
     echo "Warning: Docker is not running, so MongoDB is not started (accounts and the portfolio won't work)."
 fi
@@ -79,6 +79,9 @@ echo "Starting backend..."
     Mongo__Database=birthdaycards \
     Jwt__Key="${JWT_KEY}" \
     Security__PasswordPepper="${PASSWORD_PEPPER}" \
+    Smtp__Host="${SMTP_HOST:-localhost}" Smtp__Port="${SMTP_PORT:-${MAILPIT_SMTP_PORT:-1026}}" \
+    Smtp__User="${SMTP_USER:-}" Smtp__Password="${SMTP_PASSWORD:-}" Smtp__From="${SMTP_FROM:-}" \
+    App__PublicUrl="${PUBLIC_URL:-http://localhost:${FRONTEND_PORT}}" \
     Cors__Origins="http://localhost:${FRONTEND_PORT}" \
     exec dotnet run --no-build --no-launch-profile
 ) &
@@ -97,6 +100,7 @@ echo "--------------------------------------------------"
 echo " * GIFt it! (React):  http://localhost:${FRONTEND_PORT}"
 echo " * Backend (.NET API):   http://localhost:${BACKEND_PORT}/api   (health: /api/health)"
 echo " * MongoDB Database:     localhost:${MONGODB_PORT}"
+echo " * Test email inbox:     http://localhost:${MAILPIT_PORT:-8025}"
 echo "--------------------------------------------------"
 echo "Press Ctrl+C to stop."
 

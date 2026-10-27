@@ -30,6 +30,40 @@ public class User
     /// <summary>Round 44: wrong passwords in a row, and until when the account is locked after too many.</summary>
     public int FailedLogins { get; set; }
     public DateTime? LockedUntil { get; set; }
+    /// <summary>Round 46: the email was checked with a code at sign-up (accounts made before round 46: false).
+    /// Kept for later emails (birthday wishes, points warnings, news – not sent yet).</summary>
+    public bool EmailVerified { get; set; }
+    public DateTime? EmailVerifiedAt { get; set; }
+    /// <summary>Round 46: when this user sent cards by email (at most ShareRules.MaxEmailsPerDay per 24 h).</summary>
+    public List<DateTime> EmailSendTimes { get; set; } = new();
+}
+
+/// <summary>Round 46: an account waiting for its email code. Becomes a User when the right code is typed;
+/// removed by MongoDB itself when it runs out (TTL index on ExpiresAt).</summary>
+public class PendingSignup
+{
+    [BsonId] public string Email { get; set; } = "";
+    public string DisplayName { get; set; } = "";
+    public string PasswordHash { get; set; } = "";
+    public DateTime BirthDate { get; set; }
+    public string CodeHash { get; set; } = "";
+    public int Tries { get; set; }
+    public int Sends { get; set; }
+    public DateTime SentAt { get; set; }
+    public DateTime ExpiresAt { get; set; }
+}
+
+/// <summary>Round 46: a card shared with a public link (/s/&lt;id&gt;), kept ShareRules.KeepFor (TTL index).</summary>
+public class Share
+{
+    [BsonId] public string Id { get; set; } = "";
+    public string UserId { get; set; } = "";
+    public string FromName { get; set; } = "";
+    public string Title { get; set; } = "";
+    public string ContentType { get; set; } = "image/png";
+    public byte[] Data { get; set; } = Array.Empty<byte>();
+    public DateTime CreatedAt { get; set; } = DateTime.UtcNow;
+    public DateTime ExpiresAt { get; set; }
 }
 
 public class Design
@@ -99,3 +133,8 @@ public record BuyRequest(string? ItemId);
 /// <summary>A decorated card was downloaded as a picture or a GIF (round 42: that is what earns gift points).</summary>
 public record DownloadRequest(string? CardKey, string? Kind);
 public record DesignRequest(string? Title, string CardSize, string Background, string Image, string? Mask, string Thumbnail, List<string>? Texts, Dictionary<string, string>? Layers, List<string>? Palette = null, List<CardShape>? Shapes = null, string? PaperColor = null, string? CardKey = null);
+public record VerifyRequest(string? Email, string? Code);
+public record ResendRequest(string? Email);
+/// <summary>Round 46: a finished picture (PNG) or GIF to share with a link.</summary>
+public record ShareRequest(string? Image, string? Title);
+public record ShareEmailRequest(string? To, string? Message);

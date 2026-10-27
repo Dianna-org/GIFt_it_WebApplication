@@ -13,6 +13,19 @@ PNG='data:image/png;base64,iVBORw0KGgo='
 PW='purple-otter-banjo-42' # a password that passes the round 44 rules
 body() { echo "{\"title\":\"$1\",\"cardSize\":\"a4\",\"background\":\"#fde9a0\",\"image\":\"$PNG\",\"thumbnail\":\"data:image/jpeg;base64,AAAA\",\"texts\":[\"$2\"],\"layers\":{\"inInk\":\"$PNG\",\"cut\":\"$PNG\"}}"; }
 tok() { python3 -c "import sys,json;print(json.load(sys.stdin)['token'])"; }
+MAILPIT="${MAILPIT_URL:-http://localhost:8025}"
+# round 46: the newest sign-up code emailed to $1 (read from the Mailpit test inbox)
+code_for() {
+  for _ in 1 2 3 4 5 6 7 8 9 10; do
+    c="$(curl -s "$MAILPIT/api/v1/search?query=$(python3 -c "import urllib.parse,sys;print(urllib.parse.quote('to:\"'+sys.argv[1]+'\" subject:code'))" "$1")" | python3 -c "import sys,json;m=json.load(sys.stdin).get('messages') or [];print(m[0]['Subject'][:6] if m else '')")"
+    [[ -n "$c" ]] && { echo "$c"; return; }; sleep 0.5
+  done
+}
+# round 46: create an account = register (emails a code) + verify (prints the answer with the token)
+signup() { # email name
+  curl -s -X POST "$BASE/auth/register" -H "$H" -d "{\"email\":\"$1\",\"displayName\":\"$2\",\"password\":\"$PW\",\"birthDate\":\"2000-01-01\"}" > /dev/null
+  curl -s -X POST "$BASE/auth/verify" -H "$H" -d "{\"email\":\"$1\",\"code\":\"$(code_for "$1")\"}"
+}
 
 echo "Health"
 check "api is up" '"ok"' "$(curl -s "$BASE/health")"
@@ -20,8 +33,18 @@ check "api is up" '"ok"' "$(curl -s "$BASE/health")"
 echo "Accounts"
 check "under 14 rejected"       "at least 14" "$(curl -s -X POST "$BASE/auth/register" -H "$H" -d "{\"email\":\"kid$uniq@t.io\",\"displayName\":\"Kid\",\"password\":\"$PW\",\"birthDate\":\"$(( $(date +%Y) - 12 ))-01-01\"}")"
 check "profane name rejected"   "different display name" "$(curl -s -X POST "$BASE/auth/register" -H "$H" -d "{\"email\":\"p$uniq@t.io\",\"displayName\":\"fuck\",\"password\":\"$PW\",\"birthDate\":\"2000-01-01\"}")"
-R="$(curl -s -X POST "$BASE/auth/register" -H "$H" -d "{\"email\":\"u$uniq@t.io\",\"displayName\":\"Smoke\",\"password\":\"$PW\",\"birthDate\":\"2000-01-01\"}")"
+check "register sends a code"   '"pending":true' "$(curl -s -X POST "$BASE/auth/register" -H "$H" -d "{\"email\":\"u$uniq@t.io\",\"displayName\":\"Smoke\",\"password\":\"$PW\",\"birthDate\":\"2000-01-01\"}")"
+check "no account before the code" "Incorrect" "$(curl -s -X POST "$BASE/auth/login" -H "$H" -d "{\"email\":\"u$uniq@t.io\",\"password\":\"$PW\"}")"
+CODE="$(code_for "u$uniq@t.io")"
+check "code email arrived"       "6 digits" "$([[ "$CODE" =~ ^[0-9]{6}$ ]] && echo "6 digits" || echo "no code: '$CODE'")"
+WRONG="$([[ "$CODE" == 000000 ]] && echo 111111 || echo 000000)"
+check "wrong code refused"       "isn't right. 4 tries left" "$(curl -s -X POST "$BASE/auth/verify" -H "$H" -d "{\"email\":\"u$uniq@t.io\",\"code\":\"$WRONG\"}")"
+check "new code: wait a minute"  "Please wait" "$(curl -s -X POST "$BASE/auth/resend" -H "$H" -d "{\"email\":\"u$uniq@t.io\"}")"
+R="$(curl -s -X POST "$BASE/auth/verify" -H "$H" -d "{\"email\":\"u$uniq@t.io\",\"code\":\"${CODE:0:3} ${CODE:3}\"}")"
 check "adult can register"      '"token"' "$R"
+check "code works only once"     "run out" "$(curl -s -X POST "$BASE/auth/verify" -H "$H" -d "{\"email\":\"u$uniq@t.io\",\"code\":\"$CODE\"}")"
+sleep 1
+check "account details emailed"  "Welcome to GIFt it" "$(curl -s "$MAILPIT/api/v1/search?query=to:%22u$uniq@t.io%22" | python3 -c "import sys,json;print(' | '.join(m['Subject'] for m in json.load(sys.stdin)['messages']))")"
 T="$(echo "$R" | tok)"
 check "duplicate email rejected" "already exists" "$(curl -s -X POST "$BASE/auth/register" -H "$H" -d "{\"email\":\"u$uniq@t.io\",\"displayName\":\"Smoke\",\"password\":\"$PW\",\"birthDate\":\"2000-01-01\"}")"
 check "wrong password rejected"  "Incorrect" "$(curl -s -X POST "$BASE/auth/login" -H "$H" -d "{\"email\":\"u$uniq@t.io\",\"password\":\"nope\"}")"
@@ -55,7 +78,7 @@ check "saving again reuses slot" '"id"' "$(curl -s -X PUT "$BASE/designs/$ID" -H
 check "still one slot used"      '"id":"'"$ID"'"' "$(curl -s "$BASE/designs" -H "$AUTH")"
 for i in $(seq 2 20); do curl -s -o /dev/null -X POST "$BASE/designs" -H "$H" -H "$AUTH" -d "$(body d$i hi)"; done
 check "21st design refused"      "portfolio is full" "$(curl -s -X POST "$BASE/designs" -H "$H" -H "$AUTH" -d "$(body over hi)")"
-R2="$(curl -s -X POST "$BASE/auth/register" -H "$H" -d "{\"email\":\"o$uniq@t.io\",\"displayName\":\"Other\",\"password\":\"$PW\",\"birthDate\":\"1999-01-01\"}")"
+R2="$(signup "o$uniq@t.io" Other)"
 check "portfolio is private"     "404" "$(curl -s -o /dev/null -w '%{http_code}' "$BASE/designs/$ID" -H "Authorization: Bearer $(echo "$R2" | tok)")"
 check "delete frees a slot"      "204" "$(curl -s -o /dev/null -w '%{http_code}' -X DELETE "$BASE/designs/$ID" -H "$AUTH")"
 
@@ -88,7 +111,7 @@ echo "Security (round 44)"
 reg() { curl -s -X POST "$BASE/auth/register" -H "$H" -d "{\"email\":\"$1$uniq@t.io\",\"displayName\":\"Sec\",\"password\":\"$2\",\"birthDate\":\"2000-01-01\"}"; }
 check "short password refused"     "at least 10" "$(reg w1 short123)"
 check "common password refused"    "too easy" "$(reg w2 password123)"
-LK="$(reg lock "$PW")"
+LK="$(signup "lock$uniq@t.io" Sec)"
 check "argon2id + salt in database" '$argon2id$v=19$m=65536,t=3,p=1$' "$(docker compose exec -T mongo mongosh birthdaycards --quiet --eval "db.users.findOne({Email:'lock$uniq@t.io'}).PasswordHash" 2>&1)"
 BAD() { curl -s -X POST "$BASE/auth/login" -H "$H" -d "{\"email\":\"lock$uniq@t.io\",\"password\":\"wrong-$1\"}"; }
 for i in 1 2 3 4; do BAD $i > /dev/null; done
@@ -103,5 +126,21 @@ docker compose exec -T mongo mongosh birthdaycards --quiet --eval "db.users.upda
 check "points expire after 30 days" '"points":0,' "$(curl -s "$BASE/account" -H "Authorization: Bearer $LT")"
 check "…and it is said once"        '"expiredPoints":100' "$(docker compose exec -T mongo mongosh birthdaycards --quiet --eval "db.users.updateOne({Email:'lock$uniq@t.io'},{\$set:{LastActiveAt:new Date(Date.now()-31*864e5),Points:100}})" > /dev/null; curl -s "$BASE/account" -H "Authorization: Bearer $LT")"
 check "…not twice"                  '"expiredPoints":0' "$(curl -s "$BASE/account" -H "Authorization: Bearer $LT")"
+
+echo "Sending a card (round 46)"
+GIF="data:image/gif;base64,R0lGODlhAQABAIAAAAAAAP///yH5BAEAAAAALAAAAAABAAEAAAIBRAA7"
+S="$(curl -s -X POST "$BASE/shares" -H "$H" -H "$AUTH" -d "{\"image\":\"$GIF\",\"title\":\"For Mum\"}")"
+check "link made for a GIF"        '"url":"' "$S"
+SID="$(echo "$S" | python3 -c "import sys,json;print(json.load(sys.stdin)['id'])")"
+check "card page opens (no login)" 'og:image' "$(curl -s "${BASE%/api}/s/$SID")"
+check "card picture is a GIF"      "image/gif" "$(curl -s -o /dev/null -w '%{content_type}' "$BASE/shares/$SID/image")"
+check "unknown link: 404"          "404" "$(curl -s -o /dev/null -w '%{http_code}' "${BASE%/api}/s/abcdefghijkm")"
+check "only pictures/GIFs"         "Only a picture" "$(curl -s -X POST "$BASE/shares" -H "$H" -H "$AUTH" -d '{"image":"data:image/png;base64,PGh0bWw+"}')"
+check "link needs a login"         "401" "$(curl -s -o /dev/null -w '%{http_code}' -X POST "$BASE/shares" -H "$H" -d "{\"image\":\"$GIF\"}")"
+check "email: bad address refused" "valid email" "$(curl -s -X POST "$BASE/shares/$SID/email" -H "$H" -H "$AUTH" -d '{"to":"not-an-email","message":"hi"}')"
+check "email: someone else's card" "Unknown card" "$(curl -s -X POST "$BASE/shares/$SID/email" -H "$H" -H "$AUTH2" -d '{"to":"x@t.io","message":"hi"}')"
+check "email sent"                 '"sent":true' "$(curl -s -X POST "$BASE/shares/$SID/email" -H "$H" -H "$AUTH" -d "{\"to\":\"friend$uniq@t.io\",\"message\":\"Happy birthday <b>!</b>\"}")"
+sleep 1
+check "email has the card attached" "birthday-card.gif" "$(curl -s "$MAILPIT/api/v1/message/$(curl -s "$MAILPIT/api/v1/search?query=to:%22friend$uniq@t.io%22" | python3 -c "import sys,json;print(json.load(sys.stdin)['messages'][0]['ID'])")")"
 
 [[ $fail -eq 0 ]] && echo "All smoke tests passed." || { echo "Some smoke tests FAILED."; exit 1; }
